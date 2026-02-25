@@ -168,35 +168,28 @@ class SimpleDailyCalendar {
 		
 		<div id="sdc-calendar"></div>
 
+		<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+		<div id="sdc-export-container" style="max-width:400px; margin:30px auto; background:#f0f0f1; padding:15px; border-radius:8px; border:1px solid #ddd; text-align:center;">
+			<div style="font-weight:bold; margin-bottom:8px; color:#333;">📊 Export Report</div>
+			<div style="display:flex; gap:5px; justify-content:center;">
+				<input type="month" id="sdc-export-month" style="padding:5px;" value="<?php echo date('Y-m'); ?>">
+				<button id="sdc-export-btn" class="button" style="background:#0856c9; color:white; border:none;">Download CSV</button>
+			</div>
+		</div>
+		<?php endif; ?>
 
 		<div id="sdc-modal" class="sdc-modal" style="display:none;">
 			<div class="sdc-modal-content">
-
-    <div class="sdc-modal-topbar">
-        <h3 id="sdc-modal-date-title">Date</h3>
-
-        <div class="sdc-modal-actions">
-            <?php if ( current_user_can( 'edit_posts' ) ) : ?>
-                <button id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
-            <?php endif; ?>
-            <button type="button" class="button sdc-close-btn">Close</button>
-        </div>
-    </div>
-
-	<div class="sdc-modal-header-actions">
-		<?php if ( current_user_can( 'edit_posts' ) ) : ?>
-			<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary sdc-edit-top-btn">
-				Edit Content
-			</button>
-		<?php endif; ?>
-
-		<button type="button" class="button sdc-close-btn" aria-label="Close modal">
-			Close
-		</button>
-	</div>
-</div>
-
-	<div id="sdc-loading" style="display:none;">Loading data...</div>
+				<div class="sdc-modal-topbar">
+					<h3 id="sdc-modal-date-title">Date</h3>
+					<div class="sdc-modal-actions">
+						<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+							<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
+						<?php endif; ?>
+						<button type="button" class="button sdc-close-btn">Close</button>
+					</div>
+				</div>
+				<div id="sdc-loading" style="display:none;">Loading data...</div>
 				
 				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
 				<div class="sdc-tabs">
@@ -236,8 +229,6 @@ class SimpleDailyCalendar {
 						
 						<div class="sdc-view-section"><strong>🌳 Blue Tree Lessons:</strong> <div id="view_lessons"></div></div>
 						<div class="sdc-view-section"><strong>✍️ Posts & Enchiridion:</strong> <div id="view_posts_entries"></div></div>
-						
-						
 					</div>
 
 					<?php if ( current_user_can( 'edit_posts' ) ) : ?>
@@ -495,9 +486,4 @@ class SimpleDailyCalendar {
 	}
 }
 
-
 new SimpleDailyCalendar();
-
-
-
-
