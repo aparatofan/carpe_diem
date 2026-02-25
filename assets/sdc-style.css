@@ -176,3 +176,37 @@
 #sdc-holiday-list { list-style: none !important; margin: 0; padding: 0; }
 
 #sdc-holiday-list li { margin: 0; padding: 0; list-style-type: none !important; }
+
+/* Sticky modal header (date stays visible while scrolling) */
+.sdc-modal-content {
+  /* ensures the modal itself can scroll */
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.sdc-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 9999;
+  background: #0856c9;   /* your TBT blue */
+  padding: 18px 20px;
+}
+
+/* Make the date text look like your banner */
+#sdc-modal-date-title {
+  margin: 0;
+  color: #fff;
+  font-size: 2.2rem;
+  line-height: 1.1;
+}
+
+/* Keep the X in the top-right of the sticky header */
+.sdc-modal-header .sdc-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  color: #fff;
+  font-size: 34px;
+  line-height: 1;
+  cursor: pointer;
+}
