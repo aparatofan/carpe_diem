@@ -166,13 +166,22 @@ document.addEventListener('DOMContentLoaded', function() {
     if(closeBtn) closeBtn.onclick = closeModal;
     window.onclick = (e) => { if (e.target == modal) closeModal(); };
 
-    const showView = () => { document.getElementById('sdc-view-mode').style.display='block'; document.getElementById('sdc-edit-mode').style.display='none'; };
+    const editTopBtn = document.getElementById('sdc-btn-switch-to-edit-top');
+
+    const showView = () => { 
+        document.getElementById('sdc-view-mode').style.display='block'; 
+        document.getElementById('sdc-edit-mode').style.display='none'; 
+        if(editTopBtn) editTopBtn.style.display = 'inline-block';
+    };
+
     const showEdit = () => { 
         document.getElementById('sdc-view-mode').style.display='none'; 
         document.getElementById('sdc-edit-mode').style.display='block'; 
+        if(editTopBtn) editTopBtn.style.display = 'none';
         initEditors();
     };
-    
+
+    if(editTopBtn) editTopBtn.addEventListener('click', showEdit);
     if(document.getElementById('sdc-btn-switch-to-edit')) document.getElementById('sdc-btn-switch-to-edit').addEventListener('click', showEdit);
     if(document.getElementById('sdc-cancel-edit-btn')) document.getElementById('sdc-cancel-edit-btn').addEventListener('click', showView);
 
@@ -258,12 +267,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (mode === 'holiday_view_only') {
             titleEl.textContent = 'Holiday Details: ' + dateStr;
+            if(editTopBtn) editTopBtn.style.display = 'none';
             if(contentTabBtn) contentTabBtn.style.display = 'none'; 
             if(holidaysTabBtn) holidaysTabBtn.click(); 
             if(addHolidayWrapper) addHolidayWrapper.style.display = 'none'; 
             if(activeHolidaysTitle) activeHolidaysTitle.style.display = 'none'; 
         } else {
             titleEl.textContent = 'Date: ' + dateStr;
+            if(editTopBtn) editTopBtn.style.display = 'inline-block';
             if(contentTabBtn) contentTabBtn.style.display = 'block';
             if(tabs.length > 0) tabs[0].click(); 
             if(addHolidayWrapper) addHolidayWrapper.style.display = 'block';
