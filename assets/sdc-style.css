@@ -1,0 +1,178 @@
+/* 1. Import Roboto Slab Font */
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@300;400;700&display=swap');
+
+/* Calendar Container */
+#sdc-calendar { 
+    max-width: 95%; 
+    margin: 20px auto; 
+    font-family: sans-serif; 
+}
+
+/* --- NEW: Filter Bar Styles --- */
+#sdc-filter-bar-container {
+    max-width: 95%;
+    margin: 20px auto 10px auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+
+.sdc-filter-btn {
+    padding: 8px 16px;
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 20px; /* Pill shape */
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: #555;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sdc-filter-btn:hover {
+    background: #eee;
+    color: #000;
+}
+
+.sdc-filter-btn.active {
+    background: #0856c9;
+    color: #fff;
+    border-color: #0856c9;
+    font-weight: bold;
+}
+
+/* Holiday Stripe on Calendar */
+.sdc-holiday-stripe {
+    height: 24px !important; 
+    background-color: #0856c9;
+    border: none;
+    border-radius: 3px;
+    margin-bottom: 3px !important;
+    opacity: 1.0;
+    cursor: pointer; 
+}
+.sdc-holiday-stripe .fc-event-main-frame { height: 100%; }
+.sdc-holiday-stripe .fc-event-title { display: none; }
+
+/* Habit Icons Row */
+.sdc-habit-row {
+    text-align: center;
+    font-size: 1.2em;
+    margin-top: 2px;
+    cursor: pointer;
+}
+.fc-daygrid-event { white-space: normal !important; }
+
+/* Modal Window */
+.sdc-modal { 
+    display: none; position: fixed; z-index: 9999999; 
+    left: 0; top: 0; width: 100%; height: 100%; 
+    overflow: auto; background-color: rgba(0,0,0,0.4); 
+}
+.sdc-modal-content { 
+    background-color: #fefefe; 
+    margin: 150px auto; 
+    padding: 0; 
+    border: 1px solid #888; 
+    width: 90%; max-width: 1080px; 
+    border-radius: 8px; 
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+    max-height: calc(100vh - 180px); 
+    overflow-y: auto; 
+}
+
+/* Buttons */
+.sdc-modal-content .button, 
+.sdc-modal-content .button-primary {
+    padding: 10px 20px !important;
+    font-size: 1.1em !important;
+    color: #ffffff !important;
+    font-weight: bold !important;
+    background-color: #0856c9 !important; 
+    border-color: #0856c9 !important;      
+}
+
+.sdc-close-btn { color: #fff; float: right; font-size: 28px; font-weight: bold; cursor: pointer; margin-right: 15px; margin-top: 5px;} 
+.sdc-close-btn:hover { color: #ddd; }
+
+#sdc-modal-date-title { background: #0856c9; color: white; margin: 0; padding: 15px 20px; border-radius: 8px 8px 0 0; }
+.sdc-modal-content { padding-bottom: 20px; }
+
+#sdc-view-image-container img { max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #ddd; display: block; }
+#sdc-view-image-caption { 
+    font-size: 0.9em; 
+    color: #666; 
+    text-align: center; 
+    margin-top: 5px; 
+    font-style: italic;
+    font-family: 'Roboto Slab', serif; 
+}
+
+/* Text Content Sections */
+.sdc-view-section { margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+
+.sdc-view-section strong { 
+    display: block; 
+    color: #333;           
+    font-size: 1.2rem !important;
+    font-weight: 800 !important;
+    text-transform: uppercase; 
+    letter-spacing: 0.5px; 
+    margin-bottom: 8px;    
+    line-height: 1.4;      
+    font-family: sans-serif; 
+}
+
+.sdc-view-section div { 
+    margin-top: 5px; 
+    font-size: 1.15rem !important; 
+    font-family: 'Roboto Slab', serif !important; 
+    color: #222; 
+    white-space: pre-wrap; 
+    padding-left: 35px; 
+    line-height: 1.6 !important;   
+}
+
+/* Holiday Cards */
+.sdc-holiday-card {
+    background: #fff; 
+    padding: 15px;
+    margin-bottom: 20px;
+    width: 100%; 
+    box-sizing: border-box; 
+}
+.sdc-holiday-card h3 { 
+    margin: 10px 0 5px 0; 
+    color: #0856c9; 
+    font-family: 'Roboto Slab', serif;
+}
+.sdc-holiday-card img { 
+    width: 100% !important; 
+    min-width: 100%; 
+    height: auto; 
+    max-height: none !important; 
+    border-radius: 4px; 
+    display: block; 
+    object-fit: cover; 
+}
+.sdc-holiday-dates { font-size: 0.9em; color: #555; }
+
+/* Tabs & Forms */
+.sdc-tabs { display: flex; border-bottom: 1px solid #ddd; background: #f1f1f1; }
+.sdc-tab-btn { flex: 1; padding: 12px; border: none; background: none; cursor: pointer; font-weight: 600; color: #555; }
+.sdc-tab-btn.active { background: #fff; border-bottom: 3px solid #0856c9; color: #000; }
+.sdc-tab-pane { padding: 20px; }
+
+.widefat { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+.sdc-form-group { margin-bottom: 15px; }
+
+#sdc-holiday-list { list-style: none !important; margin: 0; padding: 0; }
+
+#sdc-holiday-list li { margin: 0; padding: 0; list-style-type: none !important; }
