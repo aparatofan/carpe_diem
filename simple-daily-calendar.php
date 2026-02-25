@@ -183,6 +183,9 @@ class SimpleDailyCalendar {
 				<div class="sdc-modal-topbar">
 					<h3 id="sdc-modal-date-title">Date</h3>
 					<div class="sdc-modal-actions">
+            <button type="button" id="sdc-btn-prev-day" class="button sdc-nav-btn">Previous</button>
+            <button type="button" id="sdc-btn-next-day" class="button sdc-nav-btn">Next</button>
+
 						<?php if ( current_user_can( 'edit_posts' ) ) : ?>
 							<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
 						<?php endif; ?>
