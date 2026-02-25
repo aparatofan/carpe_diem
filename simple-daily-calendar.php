@@ -237,9 +237,7 @@ class SimpleDailyCalendar {
 						<div class="sdc-view-section"><strong>🌳 Blue Tree Lessons:</strong> <div id="view_lessons"></div></div>
 						<div class="sdc-view-section"><strong>✍️ Posts & Enchiridion:</strong> <div id="view_posts_entries"></div></div>
 						
-						<?php if ( current_user_can( 'edit_posts' ) ) : ?>
-							<button id="sdc-btn-switch-to-edit" class="button button-primary" style="margin-top:15px;">Edit Content</button>
-						<?php endif; ?>
+						
 					</div>
 
 					<?php if ( current_user_can( 'edit_posts' ) ) : ?>
@@ -499,4 +497,5 @@ class SimpleDailyCalendar {
 
 
 new SimpleDailyCalendar();
+
 
