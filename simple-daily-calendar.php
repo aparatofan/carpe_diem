@@ -168,15 +168,6 @@ class SimpleDailyCalendar {
 		
 		<div id="sdc-calendar"></div>
 
-		<?php if ( current_user_can( 'edit_posts' ) ) : ?>
-		<div id="sdc-export-container" style="max-width:400px; margin:30px auto; background:#f0f0f1; padding:15px; border-radius:8px; border:1px solid #ddd; text-align:center;">
-			<div style="font-weight:bold; margin-bottom:8px; color:#333;">📊 Export Report</div>
-			<div style="display:flex; gap:5px; justify-content:center;">
-				<input type="month" id="sdc-export-month" style="padding:5px;" value="<?php echo date('Y-m'); ?>">
-				<button id="sdc-export-btn" class="button" style="background:#0856c9; color:white; border:none;">Download CSV</button>
-			</div>
-		</div>
-		<?php endif; ?>
 
 		<div id="sdc-modal" class="sdc-modal" style="display:none;">
 			<div class="sdc-modal-content">
@@ -506,6 +497,7 @@ class SimpleDailyCalendar {
 
 
 new SimpleDailyCalendar();
+
 
 
 
