@@ -134,6 +134,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const modal = document.getElementById('sdc-modal');
     const closeBtn = document.querySelector('.sdc-close-btn');
+    const prevDayBtn = document.getElementById('sdc-btn-prev-day');
+    const nextDayBtn = document.getElementById('sdc-btn-next-day');
+
     const titleEl = document.getElementById('sdc-modal-date-title');
     const loading = document.getElementById('sdc-loading');
     const holidayList = document.getElementById('sdc-holiday-list');
@@ -163,6 +166,28 @@ document.addEventListener('DOMContentLoaded', function() {
         modal.style.display = 'none'; 
         destroyEditors();
     };
+
+// --- DAY NAVIGATION (PREVIOUS / NEXT) ---
+function sdcGetDateAdjusted(dateStr, days) {
+    // dateStr is YYYY-MM-DD
+    const date = new Date(dateStr + 'T00:00:00');
+    date.setDate(date.getDate() + days);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function sdcNavigateDay(deltaDays) {
+    const current = document.getElementById('sdc_date_field')?.value;
+    if (!current) return;
+    const next = sdcGetDateAdjusted(current, deltaDays);
+    openModalForDate(next, 'standard');
+}
+
+if (prevDayBtn) prevDayBtn.addEventListener('click', () => sdcNavigateDay(-1));
+if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
+
     if(closeBtn) closeBtn.onclick = closeModal;
     window.onclick = (e) => { if (e.target == modal) closeModal(); };
 
