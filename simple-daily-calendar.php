@@ -181,9 +181,20 @@ class SimpleDailyCalendar {
 		<div id="sdc-modal" class="sdc-modal" style="display:none;">
 			<div class="sdc-modal-content">
 	<div class="sdc-modal-header">
-		<h3 id="sdc-modal-date-title">Date</h3>
-		<span class="sdc-close-btn" aria-label="Close">&times;</span>
+	<h3 id="sdc-modal-date-title">Date</h3>
+
+	<div class="sdc-modal-header-actions">
+		<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+			<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary sdc-edit-top-btn">
+				Edit Content
+			</button>
+		<?php endif; ?>
+
+		<button type="button" class="button sdc-close-btn" aria-label="Close modal">
+			Close
+		</button>
 	</div>
+</div>
 
 	<div id="sdc-loading" style="display:none;">Loading data...</div>
 				
@@ -488,3 +499,4 @@ class SimpleDailyCalendar {
 
 
 new SimpleDailyCalendar();
+
