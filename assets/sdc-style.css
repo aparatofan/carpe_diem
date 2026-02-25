@@ -227,6 +227,46 @@
 #sdc-holiday-list { list-style: none !important; margin: 0; padding: 0; }
 #sdc-holiday-list li { margin: 0; padding: 0; list-style-type: none !important; }
 
+/* Event Stripe on Calendar */
+.sdc-event-stripe {
+    height: 24px !important;
+    background-color: #16a34a;
+    border: none;
+    border-radius: 3px;
+    margin-bottom: 3px !important;
+    opacity: 1.0;
+    cursor: pointer;
+}
+.sdc-event-stripe .fc-event-main-frame { height: 100%; }
+.sdc-event-stripe .fc-event-title { display: none; }
+
+/* Event Cards */
+.sdc-event-card {
+    background: #fff;
+    padding: 15px;
+    margin-bottom: 20px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.sdc-event-card h3 {
+    margin: 10px 0 5px 0;
+    color: #16a34a;
+    font-family: 'Roboto Slab', serif;
+}
+.sdc-event-card img {
+    width: 100% !important;
+    min-width: 100%;
+    height: auto;
+    max-height: none !important;
+    border-radius: 4px;
+    display: block;
+    object-fit: cover;
+}
+.sdc-event-dates { font-size: 0.9em; color: #555; }
+
+#sdc-event-list { list-style: none !important; margin: 0; padding: 0; }
+#sdc-event-list li { margin: 0; padding: 0; list-style-type: none !important; }
+
 /* Topbar day navigation buttons */
 .sdc-nav-btn{
     font-weight:600;
