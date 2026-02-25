@@ -180,9 +180,12 @@ class SimpleDailyCalendar {
 
 		<div id="sdc-modal" class="sdc-modal" style="display:none;">
 			<div class="sdc-modal-content">
-				<span class="sdc-close-btn">&times;</span>
-				<h3 id="sdc-modal-date-title">Date</h3>
-				<div id="sdc-loading" style="display:none;">Loading data...</div>
+	<div class="sdc-modal-header">
+		<h3 id="sdc-modal-date-title">Date</h3>
+		<span class="sdc-close-btn" aria-label="Close">&times;</span>
+	</div>
+
+	<div id="sdc-loading" style="display:none;">Loading data...</div>
 				
 				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
 				<div class="sdc-tabs">
@@ -482,5 +485,6 @@ class SimpleDailyCalendar {
 		wp_send_json_success( $csv_data );
 	}
 }
+
 
 new SimpleDailyCalendar();
