@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if(activeFilter === 'all') return masterEvents;
         const filtered = [];
         masterEvents.forEach(evt => {
-            if(evt.extendedProps.type === 'holiday') { filtered.push(evt); return; }
+            if(evt.extendedProps.type === 'holiday' || evt.extendedProps.type === 'event') { filtered.push(evt); return; }
             if(evt.extendedProps[activeFilter]) {
                 const newEvt = { ...evt }; 
                 newEvt.title = iconMap[activeFilter]; 
@@ -123,6 +123,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const dateStr = info.event.startStr || info.event.start.toISOString().slice(0,10);
             if (info.event.id && info.event.id.startsWith('holiday-')) {
                 openModalForDate(dateStr, 'holiday_view_only');
+            } else if (info.event.id && info.event.id.startsWith('event-')) {
+                openModalForDate(dateStr, 'event_view_only');
             } else {
                 openModalForDate(dateStr, 'standard');
             }
@@ -149,6 +151,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const holidaysTabBtn = document.getElementById('sdc-tab-btn-holidays');
     const addHolidayWrapper = document.getElementById('sdc-add-holiday-wrapper');
     const activeHolidaysTitle = document.getElementById('sdc-active-holidays-title');
+    const eventList = document.getElementById('sdc-event-list');
+    const eventDisplay = document.getElementById('sdc-event-display-area');
+    const eventsTabBtn = document.getElementById('sdc-tab-btn-events');
+    const addEventWrapper = document.getElementById('sdc-add-event-wrapper');
+    const activeEventsTitle = document.getElementById('sdc-active-events-title');
 
     const editors = {}; 
 
@@ -297,6 +304,13 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             if(holidaysTabBtn) holidaysTabBtn.click(); 
             if(addHolidayWrapper) addHolidayWrapper.style.display = 'none'; 
             if(activeHolidaysTitle) activeHolidaysTitle.style.display = 'none'; 
+        } else if (mode === 'event_view_only') {
+            titleEl.textContent = 'Event Details: ' + dateStr;
+            if(editTopBtn) editTopBtn.style.display = 'none';
+            if(contentTabBtn) contentTabBtn.style.display = 'none';
+            if(eventsTabBtn) eventsTabBtn.click();
+            if(addEventWrapper) addEventWrapper.style.display = 'none';
+            if(activeEventsTitle) activeEventsTitle.style.display = 'none';
         } else {
             titleEl.textContent = 'Date: ' + dateStr;
             if(editTopBtn) editTopBtn.style.display = 'inline-block';
@@ -304,6 +318,8 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             if(tabs.length > 0) tabs[0].click(); 
             if(addHolidayWrapper) addHolidayWrapper.style.display = 'block';
             if(activeHolidaysTitle) activeHolidaysTitle.style.display = 'block';
+            if(addEventWrapper) addEventWrapper.style.display = 'block';
+            if(activeEventsTitle) activeEventsTitle.style.display = 'block';
         }
 
         document.getElementById('sdc_date_field').value = dateStr;
@@ -312,6 +328,10 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
         document.getElementById('sdc_holiday_title').value = '';
         document.getElementById('sdc_holiday_image').value = '';
         document.getElementById('sdc_image_caption').value = ''; 
+        document.getElementById('sdc_event_start').value = dateStr;
+        document.getElementById('sdc_event_end').value = dateStr;
+        document.getElementById('sdc_event_title').value = '';
+        document.getElementById('sdc_event_image').value = '';
 
         jQuery.ajax({
             url: sdcVars.ajax_url, type: 'POST',
@@ -330,6 +350,20 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                             card.innerHTML = imgHtml + '<h3>'+h.title+'</h3><div class=\"sdc-holiday-dates\">📅 '+h.start_date+' to '+h.end_date+'</div>';
                             holidayDisplay.appendChild(card);
                         });
+                    }
+
+                    // A2. Render Events
+                    if(eventDisplay) {
+                        eventDisplay.innerHTML = '';
+                        if(res.data.events && res.data.events.length > 0) {
+                            res.data.events.forEach(ev => {
+                                const card = document.createElement('div');
+                                card.className = 'sdc-event-card';
+                                let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\">' : '';
+                                card.innerHTML = imgHtml + '<h3>'+ev.title+'</h3><div class=\"sdc-event-dates\">📅 '+ev.start_date+' to '+ev.end_date+'</div>';
+                                eventDisplay.appendChild(card);
+                            });
+                        }
                     }
 
                     // B. Fill Daily Content
@@ -437,6 +471,36 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                     } else {
                         holidayList.innerHTML = '<li>No holidays set for this period.</li>';
                     }
+
+                    // C2. Manage Events List
+                    if(eventList) {
+                        eventList.innerHTML = '';
+                        if(res.data.events && res.data.events.length > 0) {
+                            res.data.events.forEach(ev => {
+                                const li = document.createElement('li');
+                                let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\" style=\"max-height:100px; display:block; margin-bottom:5px;\">' : '';
+                                let deleteLink = (mode === 'standard') ? ' <a href=\"#\" class=\"sdc-del-event\" data-id=\"'+ev.id+'\" style=\"color:red; float:right;\">[Delete]</a>' : '';
+                                li.innerHTML = '<div class=\"sdc-event-card\" style=\"margin-bottom:10px;\">' + imgHtml + '<strong>' + ev.title + '</strong>' + deleteLink + '<br><span style=\"font-size:0.9em; color:#666;\">(' + ev.start_date + ' to ' + ev.end_date + ')</span></div>';
+                                eventList.appendChild(li);
+                            });
+                            if(mode === 'standard') {
+                                document.querySelectorAll('.sdc-del-event').forEach(btn => {
+                                    btn.addEventListener('click', function(e) {
+                                        e.preventDefault();
+                                        if(confirm('Delete event?')) {
+                                            jQuery.ajax({
+                                                url: sdcVars.ajax_url, type: 'POST',
+                                                data: { action: 'sdc_delete_event', security: sdcVars.nonce, id: this.dataset.id },
+                                                success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
+                                            });
+                                        }
+                                    });
+                                });
+                            }
+                        } else {
+                            eventList.innerHTML = '<li>No events set for this period.</li>';
+                        }
+                    }
                 }
             }
         });
@@ -480,6 +544,38 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                     else { alert(res.data); }
                 }
             });
+        });
+    }
+
+
+    const eventForm = document.getElementById('sdc-event-form');
+    if(eventForm) {
+        eventForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const title = document.getElementById('sdc_event_title').value;
+            const image = document.getElementById('sdc_event_image').value;
+            const start = document.getElementById('sdc_event_start').value;
+            const end = document.getElementById('sdc_event_end').value;
+            jQuery.ajax({
+                url: sdcVars.ajax_url, type: 'POST',
+                data: { action: 'sdc_add_event', security: sdcVars.nonce, title: title, image: image, start: start, end: end },
+                success: function(res) {
+                    if(res.success) { location.reload(); }
+                    else { alert(res.data); }
+                }
+            });
+        });
+    }
+
+    var eventUploader;
+    const eventUploadBtn = document.getElementById('sdc-event-upload-btn');
+    if(eventUploadBtn) {
+        eventUploadBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (eventUploader) { eventUploader.open(); return; }
+            eventUploader = wp.media.frames.file_frame = wp.media({ title: 'Select Event Image', button: { text: 'Use Image' }, multiple: false });
+            eventUploader.on('select', function() { document.getElementById('sdc_event_image').value = eventUploader.state().get('selection').first().toJSON().url; });
+            eventUploader.open();
         });
     }
 
