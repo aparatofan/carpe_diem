@@ -271,3 +271,77 @@
 .sdc-nav-btn{
     font-weight:600;
 }
+
+/* Item Row Styling (Books, Films, Series) */
+.sdc-item-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.sdc-item-row .sdc-item-title {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.95em;
+    min-width: 0;
+}
+
+.sdc-item-row select {
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+
+.sdc-item-row .sdc-item-status {
+    min-width: 110px;
+}
+
+.sdc-item-row .sdc-item-rating {
+    min-width: 50px;
+}
+
+.sdc-remove-row-btn {
+    background: #dc3545 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 26px !important;
+    height: 26px !important;
+    min-width: 26px !important;
+    padding: 0 !important;
+    font-size: 16px !important;
+    line-height: 26px !important;
+    cursor: pointer;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.sdc-remove-row-btn:hover {
+    background: #c82333 !important;
+}
+
+.sdc-add-row-btn {
+    margin-top: 4px;
+    font-size: 0.9em !important;
+    padding: 6px 14px !important;
+}
+
+/* View mode item lists */
+.sdc-view-item {
+    padding: 2px 0;
+}
+
+.sdc-view-item-status {
+    font-size: 0.9em;
+    color: #666;
+}
+
+.sdc-view-item-rating {
+    font-weight: bold;
+    color: #0856c9;
+}
