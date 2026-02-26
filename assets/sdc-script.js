@@ -4,12 +4,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- FILTER LOGIC ---
     const masterEvents = JSON.parse(sdcVars.events_json);
-    let activeFilter = 'all'; 
+    let activeFilter = 'all';
 
     const iconMap = {
         'weight': '⚖️', 'shower': '🚿', 'sport': '🚴', 'ykw': '🤫',
         'highlights': '⭐', 'daily_text': '📝', 'talking_head': '🗣️',
-        'podcasts': '🎧', 'books': '📖', 'films': '🎬', 'lessons': '🌳', 'posts_entries': '✍️'
+        'podcasts': '🎧', 'books': '📖', 'films': '🎬', 'series': '📺',
+        'lessons': '🌳', 'posts_entries': '✍️'
     };
 
     function getFilteredEvents() {
@@ -18,8 +19,8 @@ document.addEventListener('DOMContentLoaded', function() {
         masterEvents.forEach(evt => {
             if(evt.extendedProps.type === 'holiday' || evt.extendedProps.type === 'event') { filtered.push(evt); return; }
             if(evt.extendedProps[activeFilter]) {
-                const newEvt = { ...evt }; 
-                newEvt.title = iconMap[activeFilter]; 
+                const newEvt = { ...evt };
+                newEvt.title = iconMap[activeFilter];
                 filtered.push(newEvt);
             }
         });
@@ -41,6 +42,7 @@ document.addEventListener('DOMContentLoaded', function() {
             { id: 'podcasts', label: 'Podcasts', icon: '🎧' },
             { id: 'books', label: 'Books', icon: '📖' },
             { id: 'films', label: 'Films', icon: '🎬' },
+            { id: 'series', label: 'Series', icon: '📺' },
             { id: 'lessons', label: 'Lessons', icon: '🌳' },
             { id: 'posts_entries', label: 'Posts', icon: '✍️' }
         ];
@@ -50,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.className = 'sdc-filter-btn' + (f.id === 'all' ? ' active' : '');
             btn.innerHTML = (f.icon ? f.icon + ' ' : '') + f.label;
             btn.dataset.filter = f.id;
-            
+
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.sdc-filter-btn').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
@@ -66,7 +68,7 @@ document.addEventListener('DOMContentLoaded', function() {
         calendar.addEventSource(getFilteredEvents());
     }
 
-    // --- NEW: CSV EXPORT LOGIC ---
+    // --- CSV EXPORT LOGIC ---
     const exportBtn = document.getElementById('sdc-export-btn');
     if(exportBtn) {
         exportBtn.addEventListener('click', function(e) {
@@ -78,28 +80,27 @@ document.addEventListener('DOMContentLoaded', function() {
             exportBtn.disabled = true;
 
             jQuery.ajax({
-                url: sdcVars.ajax_url, 
+                url: sdcVars.ajax_url,
                 type: 'POST',
                 data: { action: 'sdc_download_report', security: sdcVars.nonce, month: monthVal },
                 success: function(res) {
                     exportBtn.textContent = 'Download CSV';
                     exportBtn.disabled = false;
-                    
+
                     if(res.success) {
-                        // Create a Blob from the CSV string
                         const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
                         const link = document.createElement("a");
                         const url = URL.createObjectURL(blob);
-                        
+
                         link.setAttribute("href", url);
                         link.setAttribute("download", "second_brain_report_" + monthVal + ".csv");
                         link.style.visibility = 'hidden';
-                        
+
                         document.body.appendChild(link);
                         link.click();
                         document.body.removeChild(link);
                     } else {
-                        alert(res.data); // Show error (e.g., "No data found")
+                        alert(res.data);
                     }
                 },
                 error: function() {
@@ -114,10 +115,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- CALENDAR INIT ---
     var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
-        firstDay: 1, 
+        firstDay: 1,
         headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth' },
-        events: masterEvents, 
-        eventOrder: '-duration', 
+        events: masterEvents,
+        eventOrder: '-duration',
         dateClick: function(info) { openModalForDate(info.dateStr, 'standard'); },
         eventClick: function(info) {
             const dateStr = info.event.startStr || info.event.start.toISOString().slice(0,10);
@@ -132,8 +133,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     calendar.render();
 
-    // ... [MODAL & CKEDITOR LOGIC REMAINS IDENTICAL BELOW] ...
-    
+    // --- MODAL & CKEDITOR LOGIC ---
+
     const modal = document.getElementById('sdc-modal');
     const closeBtn = document.querySelector('.sdc-close-btn');
     const prevDayBtn = document.getElementById('sdc-btn-prev-day');
@@ -143,7 +144,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const loading = document.getElementById('sdc-loading');
     const holidayList = document.getElementById('sdc-holiday-list');
     const holidayDisplay = document.getElementById('sdc-holiday-display-area');
-    const viewImageWrapper = document.getElementById('sdc-view-image-wrapper'); 
+    const viewImageWrapper = document.getElementById('sdc-view-image-wrapper');
 
     const tabs = document.querySelectorAll('.sdc-tab-btn');
     const panes = document.querySelectorAll('.sdc-tab-pane');
@@ -157,7 +158,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const addEventWrapper = document.getElementById('sdc-add-event-wrapper');
     const activeEventsTitle = document.getElementById('sdc-active-events-title');
 
-    const editors = {}; 
+    const editors = {};
+
+    // Track deleted IDs for books and series
+    let deletedBookIds = [];
+    let deletedSeriesIds = [];
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -169,46 +174,45 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    const closeModal = () => { 
-        modal.style.display = 'none'; 
+    const closeModal = () => {
+        modal.style.display = 'none';
         destroyEditors();
     };
 
-// --- DAY NAVIGATION (PREVIOUS / NEXT) ---
-function sdcGetDateAdjusted(dateStr, days) {
-    // dateStr is YYYY-MM-DD
-    const date = new Date(dateStr + 'T00:00:00');
-    date.setDate(date.getDate() + days);
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
+    // --- DAY NAVIGATION (PREVIOUS / NEXT) ---
+    function sdcGetDateAdjusted(dateStr, days) {
+        const date = new Date(dateStr + 'T00:00:00');
+        date.setDate(date.getDate() + days);
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
 
-function sdcNavigateDay(deltaDays) {
-    const current = document.getElementById('sdc_date_field')?.value;
-    if (!current) return;
-    const next = sdcGetDateAdjusted(current, deltaDays);
-    openModalForDate(next, 'standard');
-}
+    function sdcNavigateDay(deltaDays) {
+        const current = document.getElementById('sdc_date_field')?.value;
+        if (!current) return;
+        const next = sdcGetDateAdjusted(current, deltaDays);
+        openModalForDate(next, 'standard');
+    }
 
-if (prevDayBtn) prevDayBtn.addEventListener('click', () => sdcNavigateDay(-1));
-if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
+    if (prevDayBtn) prevDayBtn.addEventListener('click', () => sdcNavigateDay(-1));
+    if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
 
     if(closeBtn) closeBtn.onclick = closeModal;
     window.onclick = (e) => { if (e.target == modal) closeModal(); };
 
     const editTopBtn = document.getElementById('sdc-btn-switch-to-edit-top');
 
-    const showView = () => { 
-        document.getElementById('sdc-view-mode').style.display='block'; 
-        document.getElementById('sdc-edit-mode').style.display='none'; 
+    const showView = () => {
+        document.getElementById('sdc-view-mode').style.display='block';
+        document.getElementById('sdc-edit-mode').style.display='none';
         if(editTopBtn) editTopBtn.style.display = 'inline-block';
     };
 
-    const showEdit = () => { 
-        document.getElementById('sdc-view-mode').style.display='none'; 
-        document.getElementById('sdc-edit-mode').style.display='block'; 
+    const showEdit = () => {
+        document.getElementById('sdc-view-mode').style.display='none';
+        document.getElementById('sdc-edit-mode').style.display='block';
         if(editTopBtn) editTopBtn.style.display = 'none';
         initEditors();
     };
@@ -253,10 +257,10 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             e.preventDefault();
             if (dailyUploader) { dailyUploader.open(); return; }
             dailyUploader = wp.media.frames.file_frame = wp.media({ title: 'Select Image', button: { text: 'Use Image' }, multiple: false });
-            dailyUploader.on('select', function() { 
+            dailyUploader.on('select', function() {
                 var attachment = dailyUploader.state().get('selection').first().toJSON();
                 document.getElementById('sdc_image_url').value = attachment.url;
-                document.getElementById('sdc_image_caption').value = attachment.caption || ''; 
+                document.getElementById('sdc_image_caption').value = attachment.caption || '';
             });
             dailyUploader.open();
         });
@@ -273,10 +277,190 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
         });
     }
 
+    // --- ROW HELPERS (Books, Films, Series) ---
+
+    function ratingOptionsHtml(selected) {
+        let html = '<option value="">-</option>';
+        for (let i = 0; i <= 6; i++) {
+            html += '<option value="' + i + '"' + (String(selected) === String(i) ? ' selected' : '') + '>' + i + '</option>';
+        }
+        return html;
+    }
+
+    function statusOptionsHtml(selected) {
+        const opts = [
+            { value: 'start', label: 'Start' },
+            { value: 'in_progress', label: 'In Progress' },
+            { value: 'completed', label: 'Completed' }
+        ];
+        let html = '';
+        opts.forEach(o => {
+            html += '<option value="' + o.value + '"' + (selected === o.value ? ' selected' : '') + '>' + o.label + '</option>';
+        });
+        return html;
+    }
+
+    function addBookRow(data) {
+        const container = document.getElementById('sdc-books-rows');
+        const row = document.createElement('div');
+        row.className = 'sdc-item-row';
+        row.dataset.id = (data && data.id) ? data.id : '';
+        row.innerHTML =
+            '<input type="text" class="sdc-item-title" placeholder="Book / audiobook title..." value="' + escHtml((data && data.title) || '') + '">' +
+            '<select class="sdc-item-status">' + statusOptionsHtml((data && data.status) || 'start') + '</select>' +
+            '<select class="sdc-item-rating">' + ratingOptionsHtml((data && data.rating !== null && data.rating !== undefined) ? data.rating : '') + '</select>' +
+            '<button type="button" class="sdc-remove-row-btn" title="Remove">&times;</button>';
+
+        row.querySelector('.sdc-remove-row-btn').addEventListener('click', function() {
+            const id = row.dataset.id;
+            if (id) deletedBookIds.push(id);
+            row.remove();
+        });
+
+        container.appendChild(row);
+    }
+
+    function addFilmRow(data) {
+        const container = document.getElementById('sdc-films-rows');
+        const row = document.createElement('div');
+        row.className = 'sdc-item-row';
+        row.dataset.id = (data && data.id) ? data.id : '';
+        row.innerHTML =
+            '<input type="text" class="sdc-item-title" placeholder="Film title..." value="' + escHtml((data && data.title) || '') + '">' +
+            '<select class="sdc-item-rating">' + ratingOptionsHtml((data && data.rating !== null && data.rating !== undefined) ? data.rating : '') + '</select>' +
+            '<button type="button" class="sdc-remove-row-btn" title="Remove">&times;</button>';
+
+        row.querySelector('.sdc-remove-row-btn').addEventListener('click', function() {
+            row.remove();
+        });
+
+        container.appendChild(row);
+    }
+
+    function addSeriesRow(data) {
+        const container = document.getElementById('sdc-series-rows');
+        const row = document.createElement('div');
+        row.className = 'sdc-item-row';
+        row.dataset.id = (data && data.id) ? data.id : '';
+        row.innerHTML =
+            '<input type="text" class="sdc-item-title" placeholder="Series title..." value="' + escHtml((data && data.title) || '') + '">' +
+            '<select class="sdc-item-status">' + statusOptionsHtml((data && data.status) || 'start') + '</select>' +
+            '<select class="sdc-item-rating">' + ratingOptionsHtml((data && data.rating !== null && data.rating !== undefined) ? data.rating : '') + '</select>' +
+            '<button type="button" class="sdc-remove-row-btn" title="Remove">&times;</button>';
+
+        row.querySelector('.sdc-remove-row-btn').addEventListener('click', function() {
+            const id = row.dataset.id;
+            if (id) deletedSeriesIds.push(id);
+            row.remove();
+        });
+
+        container.appendChild(row);
+    }
+
+    function escHtml(str) {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+    // --- VIEW MODE RENDERERS ---
+
+    function renderBooksView(books, date) {
+        const container = document.getElementById('view_books');
+        if (!books || books.length === 0) {
+            container.textContent = '-';
+            return;
+        }
+        container.innerHTML = '';
+        books.forEach(b => {
+            const div = document.createElement('div');
+            div.className = 'sdc-view-item';
+            let statusText = 'In Progress';
+            if (b.start_date === date && b.completion_date === date) {
+                statusText = 'Completed';
+            } else if (b.start_date === date) {
+                statusText = 'Started';
+            } else if (b.completion_date === date) {
+                statusText = 'Completed';
+            }
+
+            let ratingText = '';
+            if (statusText === 'Completed' && b.rating !== null && b.rating !== '' && b.rating !== undefined) {
+                ratingText = ' (' + b.rating + '/6)';
+            }
+
+            div.innerHTML = '<span>• ' + escHtml(b.title) + '</span>' +
+                '<span class="sdc-view-item-status"> — ' + statusText + '</span>' +
+                (ratingText ? '<span class="sdc-view-item-rating">' + ratingText + '</span>' : '');
+            container.appendChild(div);
+        });
+    }
+
+    function renderFilmsView(films) {
+        const container = document.getElementById('view_films');
+        if (!films || films.length === 0) {
+            container.textContent = '-';
+            return;
+        }
+        container.innerHTML = '';
+        films.forEach(f => {
+            const div = document.createElement('div');
+            div.className = 'sdc-view-item';
+            let ratingText = '';
+            if (f.rating !== null && f.rating !== '' && f.rating !== undefined) {
+                ratingText = ' (' + f.rating + '/6)';
+            }
+            div.innerHTML = '<span>• ' + escHtml(f.title) + '</span>' +
+                (ratingText ? '<span class="sdc-view-item-rating">' + ratingText + '</span>' : '');
+            container.appendChild(div);
+        });
+    }
+
+    function renderSeriesView(series, date) {
+        const container = document.getElementById('view_series');
+        if (!series || series.length === 0) {
+            container.textContent = '-';
+            return;
+        }
+        container.innerHTML = '';
+        series.forEach(s => {
+            const div = document.createElement('div');
+            div.className = 'sdc-view-item';
+            let statusText = 'In Progress';
+            if (s.start_date === date && s.completion_date === date) {
+                statusText = 'Completed';
+            } else if (s.start_date === date) {
+                statusText = 'Started';
+            } else if (s.completion_date === date) {
+                statusText = 'Completed';
+            }
+
+            let ratingText = '';
+            if (statusText === 'Completed' && s.rating !== null && s.rating !== '' && s.rating !== undefined) {
+                ratingText = ' (' + s.rating + '/6)';
+            }
+
+            div.innerHTML = '<span>• ' + escHtml(s.title) + '</span>' +
+                '<span class="sdc-view-item-status"> — ' + statusText + '</span>' +
+                (ratingText ? '<span class="sdc-view-item-rating">' + ratingText + '</span>' : '');
+            container.appendChild(div);
+        });
+    }
+
+    // --- PLUS BUTTON HANDLERS ---
+    const addBookBtn = document.getElementById('sdc-add-book-btn');
+    if (addBookBtn) addBookBtn.addEventListener('click', function() { addBookRow({}); });
+
+    const addFilmBtn = document.getElementById('sdc-add-film-btn');
+    if (addFilmBtn) addFilmBtn.addEventListener('click', function() { addFilmRow({}); });
+
+    const addSeriesBtn = document.getElementById('sdc-add-series-btn');
+    if (addSeriesBtn) addSeriesBtn.addEventListener('click', function() { addSeriesRow({}); });
+
     // --- MAIN LOGIC ---
     function openModalForDate(dateStr, mode = 'standard') {
         modal.style.display = 'block';
-        
+
         if ( ! sdcVars.can_edit ) {
             loading.style.display = 'none';
             titleEl.textContent = 'Date: ' + dateStr;
@@ -291,19 +475,19 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             if(editMode) editMode.style.display = 'none';
             const tabContainer = document.querySelector('.sdc-tabs');
             if(tabContainer) tabContainer.style.display = 'none';
-            return; 
+            return;
         }
 
         loading.style.display = 'block';
-        destroyEditors(); 
+        destroyEditors();
 
         if (mode === 'holiday_view_only') {
             titleEl.textContent = 'Holiday Details: ' + dateStr;
             if(editTopBtn) editTopBtn.style.display = 'none';
-            if(contentTabBtn) contentTabBtn.style.display = 'none'; 
-            if(holidaysTabBtn) holidaysTabBtn.click(); 
-            if(addHolidayWrapper) addHolidayWrapper.style.display = 'none'; 
-            if(activeHolidaysTitle) activeHolidaysTitle.style.display = 'none'; 
+            if(contentTabBtn) contentTabBtn.style.display = 'none';
+            if(holidaysTabBtn) holidaysTabBtn.click();
+            if(addHolidayWrapper) addHolidayWrapper.style.display = 'none';
+            if(activeHolidaysTitle) activeHolidaysTitle.style.display = 'none';
         } else if (mode === 'event_view_only') {
             titleEl.textContent = 'Event Details: ' + dateStr;
             if(editTopBtn) editTopBtn.style.display = 'none';
@@ -315,7 +499,7 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             titleEl.textContent = 'Date: ' + dateStr;
             if(editTopBtn) editTopBtn.style.display = 'inline-block';
             if(contentTabBtn) contentTabBtn.style.display = 'block';
-            if(tabs.length > 0) tabs[0].click(); 
+            if(tabs.length > 0) tabs[0].click();
             if(addHolidayWrapper) addHolidayWrapper.style.display = 'block';
             if(activeHolidaysTitle) activeHolidaysTitle.style.display = 'block';
             if(addEventWrapper) addEventWrapper.style.display = 'block';
@@ -323,15 +507,19 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
         }
 
         document.getElementById('sdc_date_field').value = dateStr;
-        document.getElementById('sdc_holiday_start').value = dateStr; 
-        document.getElementById('sdc_holiday_end').value = dateStr;   
+        document.getElementById('sdc_holiday_start').value = dateStr;
+        document.getElementById('sdc_holiday_end').value = dateStr;
         document.getElementById('sdc_holiday_title').value = '';
         document.getElementById('sdc_holiday_image').value = '';
-        document.getElementById('sdc_image_caption').value = ''; 
+        document.getElementById('sdc_image_caption').value = '';
         document.getElementById('sdc_event_start').value = dateStr;
         document.getElementById('sdc_event_end').value = dateStr;
         document.getElementById('sdc_event_title').value = '';
         document.getElementById('sdc_event_image').value = '';
+
+        // Reset deletion trackers
+        deletedBookIds = [];
+        deletedSeriesIds = [];
 
         jQuery.ajax({
             url: sdcVars.ajax_url, type: 'POST',
@@ -339,9 +527,9 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             success: function(res) {
                 loading.style.display = 'none';
                 if(res.success) {
-                    
+
                     // A. Render Holidays
-                    holidayDisplay.innerHTML = ''; 
+                    holidayDisplay.innerHTML = '';
                     if(res.data.holidays && res.data.holidays.length > 0) {
                         res.data.holidays.forEach(h => {
                             const card = document.createElement('div');
@@ -366,7 +554,31 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                         }
                     }
 
-                    // B. Fill Daily Content
+                    // B. Populate books/films/series rows for edit mode
+                    const booksContainer = document.getElementById('sdc-books-rows');
+                    const filmsContainer = document.getElementById('sdc-films-rows');
+                    const seriesContainer = document.getElementById('sdc-series-rows');
+
+                    if (booksContainer) booksContainer.innerHTML = '';
+                    if (filmsContainer) filmsContainer.innerHTML = '';
+                    if (seriesContainer) seriesContainer.innerHTML = '';
+
+                    if (res.data.books_active && res.data.books_active.length > 0) {
+                        res.data.books_active.forEach(b => addBookRow(b));
+                    }
+                    if (res.data.films && res.data.films.length > 0) {
+                        res.data.films.forEach(f => addFilmRow(f));
+                    }
+                    if (res.data.series_active && res.data.series_active.length > 0) {
+                        res.data.series_active.forEach(s => addSeriesRow(s));
+                    }
+
+                    // C. Populate view mode for books/films/series
+                    renderBooksView(res.data.books_view, dateStr);
+                    renderFilmsView(res.data.films);
+                    renderSeriesView(res.data.series_view, dateStr);
+
+                    // D. Fill Daily Content
                     if(res.data.has_content) {
                         const d = res.data.data;
                         const imgCont = document.getElementById('sdc-view-image-container');
@@ -375,32 +587,35 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                         if(d.image_url) {
                             viewImageWrapper.style.display = 'block';
                             imgCont.innerHTML = '<img src=\"' + d.image_url + '\">';
-                            capCont.textContent = d.image_caption || ''; 
+                            capCont.textContent = d.image_caption || '';
                         } else {
                             viewImageWrapper.style.display = 'none';
                             imgCont.innerHTML = '';
                             capCont.textContent = '';
                         }
-                        
-                        const setTxt = (id, val) => { 
+
+                        const setTxt = (id, val) => {
                             const el = document.getElementById(id);
                             if(val) { el.innerHTML = val; } else { el.textContent = '-'; }
                         };
-                        
+
                         setTxt('view_highlights', d.highlights);
                         setTxt('view_daily_text', d.daily_text);
                         setTxt('view_talking_head', d.talking_head);
                         setTxt('view_podcasts', d.podcasts);
-                        setTxt('view_books', d.books);
-                        setTxt('view_films', d.films);
                         setTxt('view_lessons', d.lessons);
                         setTxt('view_posts_entries', d.posts_entries);
 
-                        const rateEl = document.getElementById('view_films_rating');
-                        if(d.films_rating !== null && d.films_rating !== "") {
-                            rateEl.textContent = '(' + d.films_rating + '/6)';
-                        } else {
-                            rateEl.textContent = '';
+                        // Legacy book/film content fallback (show old data if no new table data)
+                        if ((!res.data.books_view || res.data.books_view.length === 0) && d.books) {
+                            document.getElementById('view_books').innerHTML = d.books;
+                        }
+                        if ((!res.data.films || res.data.films.length === 0) && d.films) {
+                            let filmHtml = d.films;
+                            if (d.films_rating !== null && d.films_rating !== '') {
+                                filmHtml += ' <span class="sdc-view-item-rating">(' + d.films_rating + '/6)</span>';
+                            }
+                            document.getElementById('view_films').innerHTML = filmHtml;
                         }
 
                         const weightEl = document.getElementById('view_weight_container');
@@ -419,17 +634,16 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                         document.getElementById('view_habits').innerHTML = habitHtml;
 
                         document.getElementById('sdc_image_url').value = d.image_url || '';
-                        document.getElementById('sdc_image_caption').value = d.image_caption || ''; 
-                        
-                        document.getElementById('sdc_films_rating').value = (d.films_rating !== null) ? d.films_rating : ''; 
-                        document.getElementById('sdc_weight').value = d.weight || ''; 
+                        document.getElementById('sdc_image_caption').value = d.image_caption || '';
+
+                        document.getElementById('sdc_weight').value = d.weight || '';
 
                         document.getElementById('sdc_ykw').checked = (d.ykw == 1);
                         document.getElementById('sdc_sport').checked = (d.sport == 1);
                         document.getElementById('sdc_shower').checked = (d.shower == 1);
 
-                        const fields = ['highlights','daily_text','talking_head','podcasts','books','films','lessons','posts_entries'];
-                        fields.forEach(f => {
+                        const textFields = ['highlights','daily_text','talking_head','podcasts','lessons','posts_entries'];
+                        textFields.forEach(f => {
                             document.getElementById('sdc_' + f).value = d[f] || '';
                         });
 
@@ -439,12 +653,11 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                         for (const id in editors) { if(editors[id]) editors[id].setData(''); }
                         viewImageWrapper.style.display = 'none';
                         document.getElementById('sdc_date_field').value = dateStr;
-                        document.getElementById('view_films_rating').textContent = ''; 
                         document.getElementById('view_weight_container').textContent = '';
                         showEdit();
                     }
 
-                    // C. Manage Holidays List
+                    // E. Manage Holidays List
                     holidayList.innerHTML = '';
                     if(res.data.holidays && res.data.holidays.length > 0) {
                         res.data.holidays.forEach(h => {
@@ -462,7 +675,7 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                                         jQuery.ajax({
                                             url: sdcVars.ajax_url, type: 'POST',
                                             data: { action: 'sdc_delete_holiday', security: sdcVars.nonce, id: this.dataset.id },
-                                            success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); } 
+                                            success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
                                         });
                                     }
                                 });
@@ -472,7 +685,7 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
                         holidayList.innerHTML = '<li>No holidays set for this period.</li>';
                     }
 
-                    // C2. Manage Events List
+                    // E2. Manage Events List
                     if(eventList) {
                         eventList.innerHTML = '';
                         if(res.data.events && res.data.events.length > 0) {
@@ -511,16 +724,80 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
     if(contentForm) {
         contentForm.addEventListener('submit', function(e) {
             e.preventDefault();
-            
+
             updateEditorContent();
+
+            // Collect books data
+            const booksData = [];
+            document.querySelectorAll('#sdc-books-rows .sdc-item-row').forEach(row => {
+                const title = row.querySelector('.sdc-item-title').value.trim();
+                if (!title) return;
+                const status = row.querySelector('.sdc-item-status').value;
+                const rating = row.querySelector('.sdc-item-rating').value;
+                booksData.push({
+                    id: row.dataset.id || '',
+                    title: title,
+                    status: status,
+                    rating: rating
+                });
+            });
+
+            // Validate: rating required on completed books
+            for (const book of booksData) {
+                if (book.status === 'completed' && (book.rating === '' || book.rating === null || book.rating === undefined)) {
+                    alert('Please provide a rating for completed book: ' + book.title);
+                    return;
+                }
+            }
+
+            // Collect films data
+            const filmsData = [];
+            document.querySelectorAll('#sdc-films-rows .sdc-item-row').forEach(row => {
+                const title = row.querySelector('.sdc-item-title').value.trim();
+                if (!title) return;
+                filmsData.push({
+                    id: row.dataset.id || '',
+                    title: title,
+                    rating: row.querySelector('.sdc-item-rating').value
+                });
+            });
+
+            // Collect series data
+            const seriesData = [];
+            document.querySelectorAll('#sdc-series-rows .sdc-item-row').forEach(row => {
+                const title = row.querySelector('.sdc-item-title').value.trim();
+                if (!title) return;
+                const status = row.querySelector('.sdc-item-status').value;
+                const rating = row.querySelector('.sdc-item-rating').value;
+                seriesData.push({
+                    id: row.dataset.id || '',
+                    title: title,
+                    status: status,
+                    rating: rating
+                });
+            });
+
+            // Validate: rating required on completed series
+            for (const s of seriesData) {
+                if (s.status === 'completed' && (s.rating === '' || s.rating === null || s.rating === undefined)) {
+                    alert('Please provide a rating for completed series: ' + s.title);
+                    return;
+                }
+            }
 
             const fd = new FormData(contentForm);
             fd.append('action', 'sdc_save_content');
             fd.append('security', sdcVars.nonce);
+            fd.append('books_data', JSON.stringify(booksData));
+            fd.append('films_data', JSON.stringify(filmsData));
+            fd.append('series_data', JSON.stringify(seriesData));
+            fd.append('deleted_books', JSON.stringify(deletedBookIds));
+            fd.append('deleted_series', JSON.stringify(deletedSeriesIds));
+
             jQuery.ajax({
                 url: sdcVars.ajax_url, type: 'POST', data: fd, processData: false, contentType: false,
                 success: function(res) {
-                    if(res.success) { location.reload(); } 
+                    if(res.success) { location.reload(); }
                     else { alert(res.data); }
                 }
             });
@@ -535,7 +812,7 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             const image = document.getElementById('sdc_holiday_image').value;
             const start = document.getElementById('sdc_holiday_start').value;
             const end = document.getElementById('sdc_holiday_end').value;
-            
+
             jQuery.ajax({
                 url: sdcVars.ajax_url, type: 'POST',
                 data: { action: 'sdc_add_holiday', security: sdcVars.nonce, title: title, image: image, start: start, end: end },
@@ -546,7 +823,6 @@ if (nextDayBtn) nextDayBtn.addEventListener('click', () => sdcNavigateDay(1));
             });
         });
     }
-
 
     const eventForm = document.getElementById('sdc-event-form');
     if(eventForm) {
