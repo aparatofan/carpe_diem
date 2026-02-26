@@ -1,0 +1,19 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Secrets
+.env
+.env.*
+
+# Dependency folders (if you ever add Node tooling)
+node_modules/
+
+# Build outputs (if applicable later)
+dist/
+build/

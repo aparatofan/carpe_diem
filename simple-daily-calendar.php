@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Daily Calendar with Popups
- * Description: Second Brain Tracker: Export Moved to Bottom (Version 5.2).
- * Version: 5.2
+ * Description: Second Brain Tracker: Events Tab Added (Version 5.3).
+ * Version: 5.3
  * Author: AI Assistant
  */
 
@@ -14,15 +14,18 @@ class SimpleDailyCalendar {
 
 	private $table_content;
 	private $table_holidays;
+	private $table_events;
 
 	public function __construct() {
 		global $wpdb;
 		$this->table_content  = $wpdb->prefix . 'daily_calendar_content';
 		$this->table_holidays = $wpdb->prefix . 'daily_calendar_holidays';
+		$this->table_events   = $wpdb->prefix . 'daily_calendar_events';
 
 		register_activation_hook( __FILE__, array( $this, 'create_tables' ) );
 		add_shortcode( 'daily_calendar', array( $this, 'render_shortcode' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'admin_init', array( $this, 'maybe_create_events_table' ) );
 
 		// AJAX Endpoints
 		add_action( 'wp_ajax_sdc_get_content', array( $this, 'ajax_get_content' ) );
@@ -30,6 +33,8 @@ class SimpleDailyCalendar {
 		add_action( 'wp_ajax_sdc_add_holiday', array( $this, 'ajax_add_holiday' ) );
 		add_action( 'wp_ajax_sdc_delete_holiday', array( $this, 'ajax_delete_holiday' ) );
 		add_action( 'wp_ajax_sdc_download_report', array( $this, 'ajax_download_report' ) );
+		add_action( 'wp_ajax_sdc_add_event', array( $this, 'ajax_add_event' ) );
+		add_action( 'wp_ajax_sdc_delete_event', array( $this, 'ajax_delete_event' ) );
 	}
 
 	public function create_tables() {
@@ -67,9 +72,26 @@ class SimpleDailyCalendar {
 			PRIMARY KEY  (id)
 		) $charset_collate;";
 
+		$sql3 = "CREATE TABLE $this->table_events (
+			id mediumint(9) NOT NULL AUTO_INCREMENT,
+			title VARCHAR(255) NOT NULL,
+			image_url TEXT,
+			start_date DATE NOT NULL,
+			end_date DATE NOT NULL,
+			PRIMARY KEY  (id)
+		) $charset_collate;";
+
 		require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 		dbDelta( $sql1 );
 		dbDelta( $sql2 );
+		dbDelta( $sql3 );
+	}
+
+	public function maybe_create_events_table() {
+		global $wpdb;
+		if ( $wpdb->get_var( "SHOW TABLES LIKE '$this->table_events'" ) != $this->table_events ) {
+			$this->create_tables();
+		}
 	}
 
 	public function enqueue_assets() {
@@ -80,9 +102,9 @@ class SimpleDailyCalendar {
 			wp_enqueue_script( 'fullcalendar-js', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js', array( 'jquery' ), '6.1.10', true );
 			wp_enqueue_script( 'ckeditor-js', 'https://cdn.ckeditor.com/ckeditor5/41.2.0/classic/ckeditor.js', array(), '41.2.0', true );
 
-			// Version 5.2
-			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array(), '5.2' );
-			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js' ), '5.2', true );
+			// Version 5.3
+			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array(), '5.3' );
+			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js' ), '5.3', true );
 
 			wp_localize_script( 'sdc-script', 'sdcVars', array(
 				'ajax_url'   => admin_url( 'admin-ajax.php' ),
@@ -157,6 +179,21 @@ class SimpleDailyCalendar {
 			);
 		}
 
+		$results_events = $wpdb->get_results( "SELECT * FROM $this->table_events", ARRAY_A );
+		foreach($results_events as $row) {
+			$end_date_visual = date('Y-m-d', strtotime($row['end_date'] . ' +1 day'));
+			$events[] = array(
+				'id'              => 'event-' . $row['id'],
+				'title'           => '',
+				'start'           => $row['start_date'],
+				'end'             => $end_date_visual,
+				'backgroundColor' => '#16a34a',
+				'borderColor'     => '#16a34a',
+				'classNames'      => ['sdc-event-stripe'],
+				'extendedProps'   => array( 'type' => 'event' )
+			);
+		}
+
 		return json_encode( $events );
 	}
 
@@ -180,14 +217,25 @@ class SimpleDailyCalendar {
 
 		<div id="sdc-modal" class="sdc-modal" style="display:none;">
 			<div class="sdc-modal-content">
-				<span class="sdc-close-btn">&times;</span>
-				<h3 id="sdc-modal-date-title">Date</h3>
+				<div class="sdc-modal-topbar">
+					<h3 id="sdc-modal-date-title">Date</h3>
+					<div class="sdc-modal-actions">
+            <button type="button" id="sdc-btn-prev-day" class="button sdc-nav-btn">Previous</button>
+            <button type="button" id="sdc-btn-next-day" class="button sdc-nav-btn">Next</button>
+
+						<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+							<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
+						<?php endif; ?>
+						<button type="button" class="button sdc-close-btn">Close</button>
+					</div>
+				</div>
 				<div id="sdc-loading" style="display:none;">Loading data...</div>
 				
 				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
 				<div class="sdc-tabs">
 					<button class="sdc-tab-btn active" data-tab="content" id="sdc-tab-btn-content">Day Content</button>
 					<button class="sdc-tab-btn" data-tab="holidays" id="sdc-tab-btn-holidays">Holidays</button>
+					<button class="sdc-tab-btn" data-tab="events" id="sdc-tab-btn-events">Events</button>
 				</div>
 				<?php endif; ?>
 
@@ -195,6 +243,7 @@ class SimpleDailyCalendar {
 					<div id="sdc-view-mode" style="display:none;">
 						
 						<div id="sdc-holiday-display-area"></div>
+					<div id="sdc-event-display-area"></div>
 
 						<div id="sdc-view-image-wrapper" style="display:none; margin-bottom: 20px;">
 							<div id="sdc-view-image-container"></div>
@@ -222,10 +271,6 @@ class SimpleDailyCalendar {
 						
 						<div class="sdc-view-section"><strong>🌳 Blue Tree Lessons:</strong> <div id="view_lessons"></div></div>
 						<div class="sdc-view-section"><strong>✍️ Posts & Enchiridion:</strong> <div id="view_posts_entries"></div></div>
-						
-						<?php if ( current_user_can( 'edit_posts' ) ) : ?>
-							<button id="sdc-btn-switch-to-edit" class="button button-primary" style="margin-top:15px;">Edit Content</button>
-						<?php endif; ?>
 					</div>
 
 					<?php if ( current_user_can( 'edit_posts' ) ) : ?>
@@ -311,6 +356,41 @@ class SimpleDailyCalendar {
 				</div>
 
 				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+				<div id="sdc-tab-events-area" class="sdc-tab-pane" style="display:none;">
+					<h4 id="sdc-active-events-title">Active Events:</h4>
+					<ul id="sdc-event-list" style="margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:15px; padding-left:0; list-style-type:none;"></ul>
+
+					<div id="sdc-add-event-wrapper">
+						<h4>Add New Event</h4>
+						<form id="sdc-event-form">
+							<div class="sdc-form-group">
+								<label>Event Description (e.g. Concert):</label>
+								<input type="text" id="sdc_event_title" required class="widefat">
+							</div>
+							<div class="sdc-form-group">
+								<label>Event Image (Optional):</label>
+								<div style="display:flex; gap:10px;">
+									<input type="url" id="sdc_event_image" name="sdc_event_image" class="widefat" placeholder="https://...">
+									<button type="button" id="sdc-event-upload-btn" class="button">Select Image</button>
+								</div>
+							</div>
+							<div style="display:flex; gap:10px;">
+								<div class="sdc-form-group" style="flex:1">
+									<label>From:</label>
+									<input type="date" id="sdc_event_start" required class="widefat">
+								</div>
+								<div class="sdc-form-group" style="flex:1">
+									<label>To (Inclusive):</label>
+									<input type="date" id="sdc_event_end" required class="widefat">
+								</div>
+							</div>
+							<button type="submit" class="button button-primary" style="background-color: #16a34a; border-color: #16a34a;">Add Event</button>
+						</form>
+					</div>
+				</div>
+				<?php endif; ?>
+
+				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
 				<div id="sdc-tab-holidays-area" class="sdc-tab-pane" style="display:none;">
 					<h4 id="sdc-active-holidays-title">Active Holidays:</h4>
 					<ul id="sdc-holiday-list" style="margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:15px; padding-left:0; list-style-type:none;"></ul>
@@ -365,10 +445,16 @@ class SimpleDailyCalendar {
 			$date, $date 
 		), ARRAY_A );
 
+		$events = $wpdb->get_results( $wpdb->prepare(
+			"SELECT * FROM $this->table_events WHERE start_date <= %s AND end_date >= %s",
+			$date, $date
+		), ARRAY_A );
+
 		wp_send_json_success( array( 
 			'has_content' => (bool)$content, 
 			'data' => $content,
-			'holidays' => $holidays
+			'holidays' => $holidays,
+			'events' => $events
 		));
 	}
 
@@ -480,6 +566,31 @@ class SimpleDailyCalendar {
 		fclose( $fp );
 
 		wp_send_json_success( $csv_data );
+	}
+
+	public function ajax_add_event() {
+		check_ajax_referer( 'sdc_nonce', 'security' );
+		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		global $wpdb;
+
+		$title = sanitize_text_field( wp_unslash($_POST['title']) );
+		$image = esc_url_raw( $_POST['image'] );
+		$start = sanitize_text_field( $_POST['start'] );
+		$end   = sanitize_text_field( $_POST['end'] );
+
+		if(empty($title) || empty($start) || empty($end)) wp_send_json_error('Missing fields');
+
+		$wpdb->insert( $this->table_events, array('title'=>$title, 'image_url'=>$image, 'start_date'=>$start, 'end_date'=>$end) );
+		wp_send_json_success( 'Event Added' );
+	}
+
+	public function ajax_delete_event() {
+		check_ajax_referer( 'sdc_nonce', 'security' );
+		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		global $wpdb;
+		$id = intval( $_POST['id'] );
+		$wpdb->delete( $this->table_events, array('id'=>$id) );
+		wp_send_json_success( 'Deleted' );
 	}
 }
 
