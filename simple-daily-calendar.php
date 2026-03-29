@@ -137,7 +137,7 @@ class SimpleDailyCalendar {
 
 	public function enqueue_assets() {
 		global $post;
-		if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'daily_calendar' ) ) {
+		if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'daily_calendar' ) && is_user_logged_in() ) {
 			wp_enqueue_media();
 			wp_enqueue_style( 'fullcalendar-css', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css', array(), '6.1.10' );
 			wp_enqueue_script( 'fullcalendar-js', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js', array( 'jquery' ), '6.1.10', true );
@@ -306,6 +306,14 @@ class SimpleDailyCalendar {
 	}
 
 	public function render_shortcode() {
+		if ( ! is_user_logged_in() ) {
+			return '<div style="max-width:480px; margin:60px auto; text-align:center; padding:40px; background:#f9f9f9; border:1px solid #ddd; border-radius:12px;">'
+				. '<h2 style="margin-bottom:12px;">🔒 Private Calendar</h2>'
+				. '<p style="color:#555;">This calendar is only visible to logged-in users.</p>'
+				. '<a href="' . esc_url( wp_login_url( get_permalink() ) ) . '" style="display:inline-block; margin-top:16px; padding:10px 24px; background:#0856c9; color:#fff; text-decoration:none; border-radius:6px;">Log In</a>'
+				. '</div>';
+		}
+
 		ob_start();
 		?>
 
