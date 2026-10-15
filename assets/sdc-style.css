@@ -345,3 +345,98 @@
     font-weight: bold;
     color: #0856c9;
 }
+
+/* =========================================================
+   PIN LOCK (v5.5)
+   ========================================================= */
+.sdc-lock-screen {
+    display: none;
+    padding: 60px 16px;
+}
+.sdc-lock-card {
+    max-width: 360px;
+    margin: 0 auto;
+    padding: 36px 28px 28px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.06);
+    text-align: center;
+    font-family: sans-serif;
+}
+.sdc-lock-icon { font-size: 2.6em; line-height: 1; margin-bottom: 12px; }
+.sdc-lock-title { margin: 0 0 8px; font-size: 1.35em; color: #1d2327; }
+.sdc-lock-sub { margin: 0 0 20px; color: #555; font-size: 0.95em; line-height: 1.45; }
+.sdc-lock-form { display: flex; flex-direction: column; gap: 10px; }
+.sdc-pin-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    font-size: 1.5em;
+    letter-spacing: 0.4em;
+    text-align: center;
+    border: 1px solid #c3c4c7;
+    border-radius: 8px;
+    outline: none;
+}
+.sdc-pin-input:focus { border-color: #0856c9; box-shadow: 0 0 0 3px rgba(8, 86, 201, 0.15); }
+.sdc-pin-input::placeholder { letter-spacing: normal; font-size: 0.6em; color: #999; }
+.sdc-lock-btn {
+    padding: 12px;
+    font-size: 1em;
+    font-weight: 600;
+    color: #fff;
+    background: #0856c9;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.sdc-lock-btn:hover { background: #0647a8; }
+.sdc-lock-btn:disabled { opacity: 0.6; cursor: wait; }
+.sdc-lock-msg { min-height: 1.3em; margin-top: 12px; font-size: 0.9em; line-height: 1.4; }
+.sdc-lock-msg.is-error { color: #b32d2e; }
+.sdc-lock-msg.is-ok { color: #16a34a; }
+.sdc-lock-links { margin-top: 10px; font-size: 0.85em; }
+.sdc-lock-links a { color: #646970; text-decoration: underline; }
+
+@keyframes sdc-shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-6px); }
+    40%, 80% { transform: translateX(6px); }
+}
+.sdc-shake { animation: sdc-shake 0.35s ease; }
+
+/* "Lock now" button above the filter bar */
+.sdc-lock-bar {
+    max-width: 95%;
+    margin: 10px auto 0;
+    display: flex;
+    justify-content: flex-end;
+}
+.sdc-lock-now {
+    padding: 6px 14px;
+    font-size: 0.9em;
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-radius: 20px;
+    cursor: pointer;
+}
+.sdc-lock-now:hover { border-color: #0856c9; color: #0856c9; }
+
+/* Countdown shown in the last 10 seconds before auto-lock (above the modal) */
+.sdc-idle-warning {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    z-index: 10000000;
+    max-width: calc(100% - 32px);
+    padding: 12px 18px;
+    background: #1d2327;
+    color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    font-family: sans-serif;
+    font-size: 0.95em;
+    text-align: center;
+}
