@@ -1,9 +1,17 @@
 document.addEventListener('DOMContentLoaded', function() {
     var calendarEl = document.getElementById('sdc-calendar');
-    if(!calendarEl) return;
+    if(!calendarEl || !window.sdcLock) return;
 
+    // Nothing is built until the PIN has been accepted; the calendar data
+    // arrives from the server only at that moment.
+    window.sdcLock.onUnlock(function(eventsJson) {
+        sdcStartApp(calendarEl, eventsJson);
+    });
+});
+
+function sdcStartApp(calendarEl, eventsJson) {
     // --- FILTER LOGIC ---
-    const masterEvents = JSON.parse(sdcVars.events_json);
+    const masterEvents = JSON.parse(eventsJson);
     let activeFilter = 'all';
 
     const iconMap = {
@@ -855,4 +863,4 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-});
+}

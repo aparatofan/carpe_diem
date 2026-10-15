@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Daily Calendar with Popups
- * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 5.4).
- * Version: 5.4
+ * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 5.5 – PIN lock).
+ * Version: 5.5
  * Author: AI Assistant
  */
 
@@ -11,6 +11,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class SimpleDailyCalendar {
+
+	const VERSION = '5.5';
+
+	// --- PIN LOCK SETTINGS ---
+	// Browser locks after this many seconds without mouse/keyboard/touch activity.
+	const IDLE_SECONDS = 60;
+	// Server forgets an unlocked session after this many seconds without a request
+	// (the browser sends a heartbeat every ~20s while you are active).
+	const SERVER_IDLE_SECONDS = 90;
+	// Wrong PIN attempts allowed before a temporary lockout.
+	const MAX_PIN_ATTEMPTS = 5;
+	const PIN_LOCKOUT_SECONDS = 900; // 15 minutes
+	// "Forgot PIN" e-mail link validity.
+	const PIN_RESET_SECONDS = 1800; // 30 minutes
+
+	const META_PIN       = '_sdc_pin_hash';
+	const META_SESSIONS  = '_sdc_unlock_sessions';
+	const META_FAILS     = '_sdc_pin_fails';
+	const META_LOCKOUT   = '_sdc_pin_lockout_until';
+	const META_RESET     = '_sdc_pin_reset';
 
 	private $table_content;
 	private $table_holidays;
@@ -31,6 +51,7 @@ class SimpleDailyCalendar {
 		register_activation_hook( __FILE__, array( $this, 'create_tables' ) );
 		add_shortcode( 'daily_calendar', array( $this, 'render_shortcode' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
+		add_action( 'template_redirect', array( $this, 'maybe_no_cache' ) );
 		add_action( 'admin_init', array( $this, 'maybe_create_tables' ) );
 
 		// AJAX Endpoints
@@ -41,6 +62,253 @@ class SimpleDailyCalendar {
 		add_action( 'wp_ajax_sdc_download_report', array( $this, 'ajax_download_report' ) );
 		add_action( 'wp_ajax_sdc_add_event', array( $this, 'ajax_add_event' ) );
 		add_action( 'wp_ajax_sdc_delete_event', array( $this, 'ajax_delete_event' ) );
+
+		// PIN lock endpoints
+		add_action( 'wp_ajax_sdc_unlock', array( $this, 'ajax_unlock' ) );
+		add_action( 'wp_ajax_sdc_resume', array( $this, 'ajax_resume' ) );
+		add_action( 'wp_ajax_sdc_ping', array( $this, 'ajax_ping' ) );
+		add_action( 'wp_ajax_sdc_lock', array( $this, 'ajax_lock' ) );
+		add_action( 'wp_ajax_sdc_set_pin', array( $this, 'ajax_set_pin' ) );
+		add_action( 'wp_ajax_sdc_request_pin_reset', array( $this, 'ajax_request_pin_reset' ) );
+	}
+
+	// =========================================================
+	// --- PIN LOCK: helpers ---
+	// =========================================================
+
+	private function can_use_calendar() {
+		return is_user_logged_in() && current_user_can( 'edit_posts' );
+	}
+
+	private function lockout_remaining( $uid ) {
+		$until = (int) get_user_meta( $uid, self::META_LOCKOUT, true );
+		return ( $until > time() ) ? $until - time() : 0;
+	}
+
+	/** Records a failed PIN / password attempt. Returns attempts left (0 = now locked out). */
+	private function register_failure( $uid ) {
+		$fails = (int) get_user_meta( $uid, self::META_FAILS, true ) + 1;
+		if ( $fails >= self::MAX_PIN_ATTEMPTS ) {
+			update_user_meta( $uid, self::META_LOCKOUT, time() + self::PIN_LOCKOUT_SECONDS );
+			update_user_meta( $uid, self::META_FAILS, 0 );
+			return 0;
+		}
+		update_user_meta( $uid, self::META_FAILS, $fails );
+		return self::MAX_PIN_ATTEMPTS - $fails;
+	}
+
+	private function clear_failures( $uid ) {
+		delete_user_meta( $uid, self::META_FAILS );
+		delete_user_meta( $uid, self::META_LOCKOUT );
+	}
+
+	private function send_throttled( $seconds ) {
+		$mins = max( 1, (int) ceil( $seconds / 60 ) );
+		wp_send_json_error( array(
+			'code'    => 'sdc_throttled',
+			'message' => sprintf( 'Too many wrong attempts. Try again in %d min.', $mins ),
+		), 429 );
+	}
+
+	/** Active (non-expired) unlock sessions: sha256(token) => last-seen timestamp. */
+	private function get_sessions( $uid ) {
+		$sessions = get_user_meta( $uid, self::META_SESSIONS, true );
+		if ( ! is_array( $sessions ) ) $sessions = array();
+		$now = time();
+		foreach ( $sessions as $hash => $last ) {
+			if ( $now - (int) $last > self::SERVER_IDLE_SECONDS ) unset( $sessions[ $hash ] );
+		}
+		return $sessions;
+	}
+
+	private function start_session( $uid ) {
+		$token    = bin2hex( random_bytes( 32 ) );
+		$sessions = $this->get_sessions( $uid );
+		$sessions[ hash( 'sha256', $token ) ] = time();
+		if ( count( $sessions ) > 5 ) { // keep at most 5 open tabs/devices
+			asort( $sessions );
+			$sessions = array_slice( $sessions, -5, null, true );
+		}
+		update_user_meta( $uid, self::META_SESSIONS, $sessions );
+		return $token;
+	}
+
+	/** Validates a token and refreshes its last-seen time. */
+	private function touch_session( $uid, $token ) {
+		if ( ! is_string( $token ) || ! preg_match( '/^[a-f0-9]{64}$/', $token ) ) return false;
+		$sessions = $this->get_sessions( $uid );
+		$hash     = hash( 'sha256', $token );
+		if ( ! isset( $sessions[ $hash ] ) ) {
+			update_user_meta( $uid, self::META_SESSIONS, $sessions ); // prune expired
+			return false;
+		}
+		$sessions[ $hash ] = time();
+		update_user_meta( $uid, self::META_SESSIONS, $sessions );
+		return true;
+	}
+
+	private function end_session( $uid, $token ) {
+		$sessions = $this->get_sessions( $uid );
+		if ( is_string( $token ) ) unset( $sessions[ hash( 'sha256', $token ) ] );
+		update_user_meta( $uid, self::META_SESSIONS, $sessions );
+	}
+
+	private function posted_token() {
+		return isset( $_POST['sdc_token'] ) ? sanitize_text_field( wp_unslash( $_POST['sdc_token'] ) ) : '';
+	}
+
+	private function posted_pin( $key ) {
+		return isset( $_POST[ $key ] ) ? preg_replace( '/\D/', '', (string) wp_unslash( $_POST[ $key ] ) ) : '';
+	}
+
+	/**
+	 * Gate for every endpoint that reads or writes calendar data.
+	 * Stops the request unless the user is allowed AND has a live PIN session.
+	 */
+	private function require_unlocked() {
+		check_ajax_referer( 'sdc_nonce', 'security' );
+		if ( ! $this->can_use_calendar() ) {
+			wp_send_json_error( 'Permission denied.', 403 );
+		}
+		if ( ! $this->touch_session( get_current_user_id(), $this->posted_token() ) ) {
+			wp_send_json_error( array( 'code' => 'sdc_locked', 'message' => 'Calendar is locked.' ), 401 );
+		}
+	}
+
+	private function send_unlocked( $uid ) {
+		wp_send_json_success( array(
+			'token'       => $this->start_session( $uid ),
+			'events_json' => $this->get_all_events_json(),
+		) );
+	}
+
+	// =========================================================
+	// --- PIN LOCK: AJAX endpoints ---
+	// =========================================================
+
+	public function ajax_unlock() {
+		check_ajax_referer( 'sdc_nonce', 'security' );
+		if ( ! $this->can_use_calendar() ) wp_send_json_error( 'Permission denied.', 403 );
+		$uid = get_current_user_id();
+
+		$wait = $this->lockout_remaining( $uid );
+		if ( $wait ) $this->send_throttled( $wait );
+
+		$hash = get_user_meta( $uid, self::META_PIN, true );
+		if ( ! $hash ) wp_send_json_error( array( 'code' => 'sdc_no_pin', 'message' => 'No PIN set yet.' ), 400 );
+
+		$pin = $this->posted_pin( 'pin' );
+		// NB: no user ID passed, so WordPress never touches the account password.
+		if ( $pin === '' || ! wp_check_password( $pin, $hash ) ) {
+			$left = $this->register_failure( $uid );
+			if ( $left === 0 ) $this->send_throttled( self::PIN_LOCKOUT_SECONDS );
+			wp_send_json_error( array(
+				'code'    => 'sdc_bad_pin',
+				'message' => sprintf( 'Wrong PIN. %d attempt%s left.', $left, $left === 1 ? '' : 's' ),
+			), 403 );
+		}
+
+		$this->clear_failures( $uid );
+		$this->send_unlocked( $uid );
+	}
+
+	/** Re-opens the calendar after a page reload (e.g. after saving) within the idle window. */
+	public function ajax_resume() {
+		$this->require_unlocked();
+		wp_send_json_success( array( 'events_json' => $this->get_all_events_json() ) );
+	}
+
+	public function ajax_ping() {
+		$this->require_unlocked();
+		wp_send_json_success( 'ok' );
+	}
+
+	public function ajax_lock() {
+		check_ajax_referer( 'sdc_nonce', 'security' );
+		if ( is_user_logged_in() ) $this->end_session( get_current_user_id(), $this->posted_token() );
+		wp_send_json_success( 'locked' );
+	}
+
+	/**
+	 * Sets the PIN. Allowed when:
+	 *  - no PIN exists yet (first-time setup), or
+	 *  - a valid "Forgot PIN" e-mail reset token is supplied.
+	 */
+	public function ajax_set_pin() {
+		check_ajax_referer( 'sdc_nonce', 'security' );
+		if ( ! $this->can_use_calendar() ) wp_send_json_error( 'Permission denied.', 403 );
+		$uid = get_current_user_id();
+
+		$wait = $this->lockout_remaining( $uid );
+		if ( $wait ) $this->send_throttled( $wait );
+
+		$pin  = $this->posted_pin( 'pin' );
+		$pin2 = $this->posted_pin( 'pin_confirm' );
+		if ( ! preg_match( '/^\d{4,8}$/', $pin ) ) {
+			wp_send_json_error( array( 'code' => 'sdc_invalid', 'message' => 'PIN must be 4–8 digits.' ), 400 );
+		}
+		if ( $pin !== $pin2 ) {
+			wp_send_json_error( array( 'code' => 'sdc_invalid', 'message' => 'The two PINs don\'t match.' ), 400 );
+		}
+
+		if ( get_user_meta( $uid, self::META_PIN, true ) ) {
+			$reset = get_user_meta( $uid, self::META_RESET, true );
+			$given = isset( $_POST['reset_token'] ) ? sanitize_text_field( wp_unslash( $_POST['reset_token'] ) ) : '';
+			$valid = is_array( $reset ) && ! empty( $reset['hash'] ) && (int) $reset['expires'] > time()
+				&& $given !== '' && hash_equals( $reset['hash'], hash( 'sha256', $given ) );
+			if ( ! $valid ) {
+				$left = $this->register_failure( $uid );
+				if ( $left === 0 ) $this->send_throttled( self::PIN_LOCKOUT_SECONDS );
+				wp_send_json_error( array(
+					'code'    => 'sdc_bad_reset',
+					'message' => 'This reset link is invalid or has expired. Request a new one.',
+				), 403 );
+			}
+			delete_user_meta( $uid, self::META_RESET );
+		}
+
+		update_user_meta( $uid, self::META_PIN, wp_hash_password( $pin ) );
+		delete_user_meta( $uid, self::META_SESSIONS ); // sign out every other open tab
+		$this->clear_failures( $uid );
+		$this->send_unlocked( $uid );
+	}
+
+	/** "Forgot PIN": e-mails a one-time link to the account's e-mail address. */
+	public function ajax_request_pin_reset() {
+		check_ajax_referer( 'sdc_nonce', 'security' );
+		if ( ! $this->can_use_calendar() ) wp_send_json_error( 'Permission denied.', 403 );
+		$uid  = get_current_user_id();
+		$user = wp_get_current_user();
+
+		$reset = get_user_meta( $uid, self::META_RESET, true );
+		if ( is_array( $reset ) && isset( $reset['sent'] ) && time() - (int) $reset['sent'] < 60 ) {
+			wp_send_json_error( array( 'code' => 'sdc_wait', 'message' => 'A link was just sent. Wait a minute before asking again.' ), 429 );
+		}
+
+		$return_url = isset( $_POST['return_url'] ) ? esc_url_raw( wp_unslash( $_POST['return_url'] ) ) : '';
+		$return_url = wp_validate_redirect( $return_url, home_url( '/' ) );
+
+		$token = bin2hex( random_bytes( 32 ) );
+		update_user_meta( $uid, self::META_RESET, array(
+			'hash'    => hash( 'sha256', $token ),
+			'expires' => time() + self::PIN_RESET_SECONDS,
+			'sent'    => time(),
+		) );
+
+		$link    = add_query_arg( 'sdc_pin_reset', $token, $return_url );
+		$subject = 'Kalendarz – reset your PIN';
+		$body    = "Someone (hopefully you) asked to reset the Kalendarz PIN on " . home_url( '/' ) . ".\n\n"
+			. "Open this link within 30 minutes to choose a new PIN:\n" . $link . "\n\n"
+			. "If it wasn't you, ignore this e-mail – your current PIN keeps working.";
+
+		if ( ! wp_mail( $user->user_email, $subject, $body ) ) {
+			delete_user_meta( $uid, self::META_RESET );
+			wp_send_json_error( array( 'code' => 'sdc_mail', 'message' => 'The e-mail could not be sent from this site.' ), 500 );
+		}
+
+		$at = strpos( $user->user_email, '@' );
+		$masked = ( $at > 1 ) ? substr( $user->user_email, 0, 1 ) . str_repeat( '•', $at - 1 ) . substr( $user->user_email, $at ) : $user->user_email;
+		wp_send_json_success( array( 'message' => 'Reset link sent to ' . $masked . '. It works for 30 minutes.' ) );
 	}
 
 	public function create_tables() {
@@ -137,22 +405,35 @@ class SimpleDailyCalendar {
 
 	public function enqueue_assets() {
 		global $post;
-		if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'daily_calendar' ) && is_user_logged_in() ) {
+		if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'daily_calendar' ) && $this->can_use_calendar() ) {
 			wp_enqueue_media();
 			wp_enqueue_style( 'fullcalendar-css', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css', array(), '6.1.10' );
 			wp_enqueue_script( 'fullcalendar-js', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js', array( 'jquery' ), '6.1.10', true );
 			wp_enqueue_script( 'ckeditor-js', 'https://cdn.ckeditor.com/ckeditor5/41.2.0/classic/ckeditor.js', array(), '41.2.0', true );
 
-			// Version 5.4
-			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array(), '5.4' );
-			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js' ), '5.4', true );
+			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array(), self::VERSION );
+			wp_enqueue_script( 'sdc-lock', plugin_dir_url( __FILE__ ) . 'assets/sdc-lock.js', array( 'jquery' ), self::VERSION, true );
+			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js', 'sdc-lock' ), self::VERSION, true );
 
-			wp_localize_script( 'sdc-script', 'sdcVars', array(
-				'ajax_url'   => admin_url( 'admin-ajax.php' ),
-				'nonce'      => wp_create_nonce( 'sdc_nonce' ),
-				'can_edit'   => current_user_can( 'edit_posts' ),
-				'events_json' => $this->get_all_events_json()
-			) );
+			// Calendar data is NOT embedded in the page any more – it is only
+			// returned by AJAX after the PIN has been entered.
+			$vars = array(
+				'ajax_url'      => admin_url( 'admin-ajax.php' ),
+				'nonce'         => wp_create_nonce( 'sdc_nonce' ),
+				'can_edit'      => current_user_can( 'edit_posts' ),
+				'has_pin'       => (bool) get_user_meta( get_current_user_id(), self::META_PIN, true ),
+				'idle_seconds'  => self::IDLE_SECONDS,
+				'user_key'      => md5( get_current_user_id() . wp_salt( 'nonce' ) ),
+			);
+			wp_localize_script( 'sdc-lock', 'sdcVars', $vars );
+		}
+	}
+
+	/** Keep the private calendar page out of browser / proxy caches. */
+	public function maybe_no_cache() {
+		global $post;
+		if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'daily_calendar' ) ) {
+			nocache_headers();
 		}
 	}
 
@@ -305,6 +586,34 @@ class SimpleDailyCalendar {
 		return json_encode( $events );
 	}
 
+	private function render_lock_screen() {
+		ob_start();
+		?>
+		<div id="sdc-lock-screen" class="sdc-lock-screen" aria-live="polite">
+			<div class="sdc-lock-card">
+				<div class="sdc-lock-icon" aria-hidden="true">🔒</div>
+				<h2 class="sdc-lock-title" id="sdc-lock-title">Kalendarz is locked</h2>
+				<p class="sdc-lock-sub" id="sdc-lock-sub">Enter your PIN to open it.</p>
+
+				<form id="sdc-lock-form" class="sdc-lock-form" autocomplete="off">
+					<input type="password" id="sdc-pin" class="sdc-pin-input" inputmode="numeric" pattern="[0-9]*"
+						maxlength="8" autocomplete="off" placeholder="PIN" aria-label="PIN">
+					<input type="password" id="sdc-pin-confirm" class="sdc-pin-input" inputmode="numeric" pattern="[0-9]*"
+						maxlength="8" autocomplete="off" placeholder="Repeat PIN" aria-label="Repeat PIN" style="display:none;">
+					<button type="submit" id="sdc-lock-submit" class="sdc-lock-btn">Unlock</button>
+				</form>
+
+				<div id="sdc-lock-msg" class="sdc-lock-msg" role="alert"></div>
+
+				<div class="sdc-lock-links">
+					<a href="#" id="sdc-forgot-pin">Forgot PIN?</a>
+				</div>
+			</div>
+		</div>
+		<?php
+		return ob_get_clean();
+	}
+
 	public function render_shortcode() {
 		if ( ! is_user_logged_in() ) {
 			return '<div style="max-width:480px; margin:60px auto; text-align:center; padding:40px; background:#f9f9f9; border:1px solid #ddd; border-radius:12px;">'
@@ -314,8 +623,26 @@ class SimpleDailyCalendar {
 				. '</div>';
 		}
 
+		if ( ! $this->can_use_calendar() ) {
+			return '<div style="max-width:480px; margin:60px auto; text-align:center; padding:40px; background:#f9f9f9; border:1px solid #ddd; border-radius:12px;">'
+				. '<h2 style="margin-bottom:12px;">🔒 Private Calendar</h2>'
+				. '<p style="color:#555;">Details of this calendar are only visible to me. Thanks for visiting!</p>'
+				. '</div>';
+		}
+
 		ob_start();
+		echo $this->render_lock_screen();
 		?>
+
+		<div id="sdc-app" style="display:none;">
+
+		<div class="sdc-lock-bar">
+			<button type="button" id="sdc-lock-now" class="sdc-lock-now" title="Lock now">🔒 Lock</button>
+		</div>
+
+		<div id="sdc-idle-warning" class="sdc-idle-warning" style="display:none;" role="status">
+			Locking in <strong id="sdc-idle-count">10</strong> s – move the mouse or press a key to stay unlocked.
+		</div>
 
 		<div id="sdc-filter-bar-container"></div>
 
@@ -535,6 +862,8 @@ class SimpleDailyCalendar {
 
 			</div>
 		</div>
+
+		</div><!-- /#sdc-app -->
 		<?php
 		return ob_get_clean();
 	}
@@ -542,7 +871,7 @@ class SimpleDailyCalendar {
 	// --- AJAX HANDLERS ---
 
 	public function ajax_get_content() {
-		check_ajax_referer( 'sdc_nonce', 'security' );
+		$this->require_unlocked();
 		global $wpdb;
 		$date = sanitize_text_field( $_POST['date'] );
 
@@ -602,8 +931,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_save_content() {
-		check_ajax_referer( 'sdc_nonce', 'security' );
-		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		$this->require_unlocked();
 		global $wpdb;
 
 		$event_date = sanitize_text_field( $_POST['sdc_date_field'] );
@@ -743,8 +1071,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_add_holiday() {
-		check_ajax_referer( 'sdc_nonce', 'security' );
-		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		$this->require_unlocked();
 		global $wpdb;
 
 		$title = sanitize_text_field( wp_unslash($_POST['title']) );
@@ -759,8 +1086,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_delete_holiday() {
-		check_ajax_referer( 'sdc_nonce', 'security' );
-		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		$this->require_unlocked();
 		global $wpdb;
 		$id = intval( $_POST['id'] );
 		$wpdb->delete( $this->table_holidays, array('id'=>$id) );
@@ -768,8 +1094,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_download_report() {
-		check_ajax_referer( 'sdc_nonce', 'security' );
-		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		$this->require_unlocked();
 
 		global $wpdb;
 		$month = sanitize_text_field( $_POST['month'] );
@@ -929,8 +1254,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_add_event() {
-		check_ajax_referer( 'sdc_nonce', 'security' );
-		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		$this->require_unlocked();
 		global $wpdb;
 
 		$title = sanitize_text_field( wp_unslash($_POST['title']) );
@@ -945,8 +1269,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_delete_event() {
-		check_ajax_referer( 'sdc_nonce', 'security' );
-		if ( ! current_user_can( 'edit_posts' ) ) wp_send_json_error( 'Permission denied.' );
+		$this->require_unlocked();
 		global $wpdb;
 		$id = intval( $_POST['id'] );
 		$wpdb->delete( $this->table_events, array('id'=>$id) );
