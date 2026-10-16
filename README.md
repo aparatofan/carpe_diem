@@ -4,8 +4,10 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
 
 ## Files
 - simple-daily-calendar.php – main PHP file
+- includes/sdc-sol.php – Sol (OpenAI chat): conversation loop, read-only data tools, chat storage
 - assets/sdc-script.js – calendar JavaScript
 - assets/sdc-lock.js – PIN lock screen + auto-lock
+- assets/sdc-sol.js – Sol chat panel
 - assets/sdc-style.css – CSS
 
 ## PIN lock (since 5.5)
@@ -26,3 +28,31 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
   (e.g. in phpMyAdmin, table `wp_usermeta`) and you'll be asked to set a new PIN.
 - Timings are constants at the top of the `SimpleDailyCalendar` class
   (`IDLE_SECONDS`, `WRITING_IDLE_SECONDS`, `MAX_PIN_ATTEMPTS`, `PIN_LOCKOUT_SECONDS`, …).
+
+## Sol – coach / mentor chat (since 6.0)
+- **💬 Sol** button next to 🔒 Lock. Works only while Kalendarz is unlocked; locking closes it.
+- Sol is a coach/mentor character (editable under **⚙︎ Character**) that can read the calendar
+  through **read-only** tools: overview, entries for a date range (max 92 days), text search,
+  books/films/series, statistics (habits, weight), and earlier conversations.
+- Conversations are stored in two tables (`wp_daily_calendar_chats`, `wp_daily_calendar_chat_messages`)
+  and can be deleted from the list.
+- Writing to Sol uses the 5-minute writing limit; an unsent message is rescued on lock.
+  If the page locks while Sol is answering, the answer is still saved.
+
+### Setup
+Add to `wp-config.php` (above "That's all, stop editing!"):
+
+```php
+define( 'SDC_OPENAI_API_KEY', 'sk-...' );       // required
+define( 'SDC_OPENAI_MODEL', 'gpt-6.1-sol' );     // optional (default gpt-6.1-sol)
+define( 'SDC_OPENAI_REASONING', 'medium' );      // optional: low | medium | high
+```
+
+After uploading the files, open any wp-admin page once so the two chat tables are created
+(they are also created automatically on first use).
+
+### Privacy
+- The API key stays on the server. The browser only talks to WordPress.
+- Requests use `store: false`. Per OpenAI's API data policy, API data is not used for training by
+  default; abuse-monitoring logs may be kept up to 30 days.
+- Only what a question needs is sent: Sol requests specific dates/searches through its tools.

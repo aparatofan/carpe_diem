@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Daily Calendar with Popups
- * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 5.6 – PIN lock, writing mode).
- * Version: 5.6
+ * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.0 – PIN lock, writing mode, Sol).
+ * Version: 6.0
  * Author: AI Assistant
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '5.6';
+	const VERSION = '6.0';
 
 	// --- PIN LOCK SETTINGS ---
 	// Browser locks after this many seconds without mouse/keyboard/touch activity.
@@ -78,7 +78,14 @@ class SimpleDailyCalendar {
 		add_action( 'wp_ajax_sdc_set_pin', array( $this, 'ajax_set_pin' ) );
 		add_action( 'wp_ajax_sdc_request_pin_reset', array( $this, 'ajax_request_pin_reset' ) );
 		add_action( 'wp_ajax_sdc_discard_draft', array( $this, 'ajax_discard_draft' ) );
+
+		// Sol – coach / mentor chat (OpenAI)
+		require_once plugin_dir_path( __FILE__ ) . 'includes/sdc-sol.php';
+		$this->sol = new SDC_Sol( $this );
 	}
+
+	/** @var SDC_Sol */
+	public $sol;
 
 	// =========================================================
 	// --- PIN LOCK: helpers ---
@@ -173,7 +180,7 @@ class SimpleDailyCalendar {
 	 * Gate for every endpoint that reads or writes calendar data.
 	 * Stops the request unless the user is allowed AND has a live PIN session.
 	 */
-	private function require_unlocked() {
+	public function require_unlocked() {
 		check_ajax_referer( 'sdc_nonce', 'security' );
 		if ( ! $this->can_use_calendar() ) {
 			wp_send_json_error( 'Permission denied.', 403 );
@@ -188,6 +195,7 @@ class SimpleDailyCalendar {
 			'token'       => $this->start_session( $uid ),
 			'events_json' => $this->get_all_events_json(),
 			'draft'       => $this->get_draft( $uid ),
+			'chat_draft'  => $this->sol->take_chat_draft( $uid ),
 		) );
 	}
 
@@ -330,6 +338,10 @@ class SimpleDailyCalendar {
 				update_user_meta( $uid, self::META_DRAFT, $draft );
 				$draft_saved = true;
 			}
+		}
+		// A message to Sol that was typed but not sent yet.
+		if ( $this->can_use_calendar() && isset( $_POST['chat_draft'] ) ) {
+			if ( $this->sol->store_chat_draft( $uid, wp_unslash( $_POST['chat_draft'] ) ) ) $draft_saved = true;
 		}
 
 		$this->end_session( $uid, $this->posted_token() );
@@ -497,11 +509,14 @@ class SimpleDailyCalendar {
 		dbDelta( $sql4 );
 		dbDelta( $sql5 );
 		dbDelta( $sql6 );
+		foreach ( $this->sol->create_tables_sql( $charset_collate ) as $sql ) {
+			dbDelta( $sql );
+		}
 	}
 
 	public function maybe_create_tables() {
 		global $wpdb;
-		$tables = array( $this->table_events, $this->table_books, $this->table_films, $this->table_series );
+		$tables = array_merge( array( $this->table_events, $this->table_books, $this->table_films, $this->table_series ), $this->sol->table_names() );
 		foreach ( $tables as $table ) {
 			if ( $wpdb->get_var( "SHOW TABLES LIKE '$table'" ) != $table ) {
 				$this->create_tables();
@@ -521,6 +536,7 @@ class SimpleDailyCalendar {
 			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array(), self::VERSION );
 			wp_enqueue_script( 'sdc-lock', plugin_dir_url( __FILE__ ) . 'assets/sdc-lock.js', array( 'jquery' ), self::VERSION, true );
 			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js', 'sdc-lock' ), self::VERSION, true );
+			wp_enqueue_script( 'sdc-sol', plugin_dir_url( __FILE__ ) . 'assets/sdc-sol.js', array( 'jquery', 'sdc-lock' ), self::VERSION, true );
 
 			// Calendar data is NOT embedded in the page any more – it is only
 			// returned by AJAX after the PIN has been entered.
@@ -532,6 +548,7 @@ class SimpleDailyCalendar {
 				'idle_seconds'  => self::IDLE_SECONDS,
 				'writing_idle_seconds' => self::WRITING_IDLE_SECONDS,
 				'user_key'      => md5( get_current_user_id() . wp_salt( 'nonce' ) ),
+				'sol_configured' => SDC_Sol::api_key() !== '',
 			);
 			wp_localize_script( 'sdc-lock', 'sdcVars', $vars );
 		}
@@ -745,6 +762,7 @@ class SimpleDailyCalendar {
 		<div id="sdc-app" style="display:none;">
 
 		<div class="sdc-lock-bar">
+			<button type="button" id="sdc-sol-open" class="sdc-lock-now sdc-sol-open" title="Talk to Sol">💬 Sol</button>
 			<button type="button" id="sdc-lock-now" class="sdc-lock-now" title="Lock now">🔒 Lock</button>
 		</div>
 

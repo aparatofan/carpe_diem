@@ -35,9 +35,13 @@
     var mode = 'unlock';
     var resetToken = null;
     var editorApi = null;   // registered by sdc-script.js: { isWriting(), collectDraft() }
+    var chatApi = null;     // registered by sdc-sol.js:    { isWriting(), collectDraft() }
 
     function isWriting() {
-        try { return !!(editorApi && editorApi.isWriting()); } catch (e) { return false; }
+        var w = false;
+        try { w = !!(editorApi && editorApi.isWriting()); } catch (e) {}
+        try { w = w || !!(chatApi && chatApi.isWriting()); } catch (e) {}
+        return w;
     }
     function currentLimit() { return isWriting() ? WRITE_MS : IDLE_MS; }
 
@@ -75,8 +79,9 @@
         if (ticker) clearInterval(ticker);
 
         // Grab any unsaved text BEFORE the page is wiped.
-        var draft = null;
+        var draft = null, chatDraft = null;
         try { draft = editorApi ? editorApi.collectDraft() : null; } catch (e) { draft = null; }
+        try { chatDraft = chatApi ? chatApi.collectDraft() : null; } catch (e) { chatDraft = null; }
 
         // Remove everything immediately, before the reload. Removing (not just
         // hiding) also stops the browser from refilling form fields after reload.
@@ -99,9 +104,10 @@
         fd.append('security', V.nonce);
         if (t) fd.append('sdc_token', t);
 
-        if (draft) {
-            // Wait for the server to store the draft, then reload.
-            fd.append('draft', JSON.stringify(draft));
+        if (draft || chatDraft) {
+            // Wait for the server to store the draft(s), then reload.
+            if (draft) fd.append('draft', JSON.stringify(draft));
+            if (chatDraft) fd.append('chat_draft', JSON.stringify(chatDraft));
             showMode('checking');
             $('#sdc-lock-title').text('Locking… saving what you were writing');
             $.ajax({ url: V.ajax_url, type: 'POST', data: fd, processData: false, contentType: false, timeout: 8000 })
@@ -179,7 +185,7 @@
     }
 
     // ---------- unlocked ----------
-    function enter(eventsJson, activityAt, draft) {
+    function enter(eventsJson, activityAt, draft, extra) {
         unlocked = true;
         locking = false;
         lastActivity = activityAt || Date.now();
@@ -196,7 +202,7 @@
         eventsJsonCache = eventsJson;
         if (!started) {
             started = true;
-            callbacks.forEach(function (cb) { cb(eventsJson, draft || null); });
+            callbacks.forEach(function (cb) { cb(eventsJson, draft || null, extra || {}); });
             callbacks = [];
         }
     }
@@ -254,7 +260,7 @@
             btn.prop('disabled', true);
             $.post(V.ajax_url, { action: 'sdc_unlock', security: V.nonce, pin: pin })
                 .done(function (res) {
-                    if (res && res.success) { token = res.data.token; enter(res.data.events_json, null, res.data.draft); }
+                    if (res && res.success) { token = res.data.token; enter(res.data.events_json, null, res.data.draft, { chat_draft: res.data.chat_draft }); }
                     else { btn.prop('disabled', false); setMsg('Something went wrong.', true); }
                 })
                 .fail(function (xhr) {
@@ -275,7 +281,7 @@
             if (mode === 'reset' && resetToken) data.reset_token = resetToken;
             $.post(V.ajax_url, data)
                 .done(function (res) {
-                    if (res && res.success) { resetToken = null; V.has_pin = true; token = res.data.token; enter(res.data.events_json, null, res.data.draft); }
+                    if (res && res.success) { resetToken = null; V.has_pin = true; token = res.data.token; enter(res.data.events_json, null, res.data.draft, { chat_draft: res.data.chat_draft }); }
                     else { btn.prop('disabled', false); setMsg('Something went wrong.', true); }
                 })
                 .fail(function (xhr) {
@@ -305,10 +311,11 @@
     // ---------- public API for sdc-script.js ----------
     window.sdcLock = {
         onUnlock: function (cb) {
-            if (started) cb(eventsJsonCache, null); else callbacks.push(cb);
+            if (started) cb(eventsJsonCache, null, {}); else callbacks.push(cb);
         },
-        // sdc-script.js tells the lock whether you are writing and how to grab unsaved text.
+        // sdc-script.js / sdc-sol.js tell the lock whether you are writing and how to grab unsaved text.
         registerEditor: function (api) { editorApi = api; },
+        registerChat: function (api) { chatApi = api; },
         lockNow: lockNow
     };
 
