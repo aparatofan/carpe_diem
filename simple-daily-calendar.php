@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Daily Calendar with Popups
- * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 5.5 – PIN lock).
- * Version: 5.5
+ * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 5.6 – PIN lock, writing mode).
+ * Version: 5.6
  * Author: AI Assistant
  */
 
@@ -12,14 +12,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '5.5';
+	const VERSION = '5.6';
 
 	// --- PIN LOCK SETTINGS ---
 	// Browser locks after this many seconds without mouse/keyboard/touch activity.
 	const IDLE_SECONDS = 60;
+	// While you are writing an entry (you have typed something that is not saved yet,
+	// or the cursor is in a text field) the browser waits this long instead.
+	const WRITING_IDLE_SECONDS = 300; // 5 minutes
 	// Server forgets an unlocked session after this many seconds without a request
-	// (the browser sends a heartbeat every ~20s while you are active).
-	const SERVER_IDLE_SECONDS = 90;
+	// (the open page sends a heartbeat every ~20s, so this only matters if the tab
+	// was closed or the computer went to sleep).
+	const SERVER_IDLE_SECONDS = 330;
+	// Unsaved text rescued at lock time is kept this long.
+	const DRAFT_KEEP_SECONDS = 1209600; // 14 days
 	// Wrong PIN attempts allowed before a temporary lockout.
 	const MAX_PIN_ATTEMPTS = 5;
 	const PIN_LOCKOUT_SECONDS = 900; // 15 minutes
@@ -31,6 +37,7 @@ class SimpleDailyCalendar {
 	const META_FAILS     = '_sdc_pin_fails';
 	const META_LOCKOUT   = '_sdc_pin_lockout_until';
 	const META_RESET     = '_sdc_pin_reset';
+	const META_DRAFT     = '_sdc_draft';
 
 	private $table_content;
 	private $table_holidays;
@@ -70,6 +77,7 @@ class SimpleDailyCalendar {
 		add_action( 'wp_ajax_sdc_lock', array( $this, 'ajax_lock' ) );
 		add_action( 'wp_ajax_sdc_set_pin', array( $this, 'ajax_set_pin' ) );
 		add_action( 'wp_ajax_sdc_request_pin_reset', array( $this, 'ajax_request_pin_reset' ) );
+		add_action( 'wp_ajax_sdc_discard_draft', array( $this, 'ajax_discard_draft' ) );
 	}
 
 	// =========================================================
@@ -179,7 +187,89 @@ class SimpleDailyCalendar {
 		wp_send_json_success( array(
 			'token'       => $this->start_session( $uid ),
 			'events_json' => $this->get_all_events_json(),
+			'draft'       => $this->get_draft( $uid ),
 		) );
+	}
+
+	// =========================================================
+	// --- DRAFT RESCUE: text that was being written when the calendar locked ---
+	// It is stored on the server (never in the browser) and only handed back
+	// after the PIN has been entered again.
+	// =========================================================
+
+	private function get_draft( $uid ) {
+		$draft = get_user_meta( $uid, self::META_DRAFT, true );
+		if ( ! is_array( $draft ) || empty( $draft['date'] ) ) return null;
+		if ( time() - (int) $draft['saved'] > self::DRAFT_KEEP_SECONDS ) {
+			delete_user_meta( $uid, self::META_DRAFT );
+			return null;
+		}
+		return $draft;
+	}
+
+	private function clean_rating( $r ) {
+		if ( $r === '' || $r === null || ! is_numeric( $r ) ) return '';
+		return (string) max( 0, min( 6, intval( $r ) ) );
+	}
+
+	private function clean_rows( $rows, $with_status ) {
+		$out = array();
+		if ( ! is_array( $rows ) ) return $out;
+		foreach ( array_slice( $rows, 0, 100 ) as $row ) {
+			if ( ! is_array( $row ) ) continue;
+			$title = sanitize_text_field( isset( $row['title'] ) ? (string) $row['title'] : '' );
+			if ( $title === '' ) continue;
+			$item = array(
+				'id'     => ! empty( $row['id'] ) ? (string) intval( $row['id'] ) : '',
+				'title'  => $title,
+				'rating' => $this->clean_rating( isset( $row['rating'] ) ? $row['rating'] : '' ),
+			);
+			if ( $with_status ) {
+				$item['status'] = ( isset( $row['status'] ) && in_array( $row['status'], array( 'start', 'in_progress', 'completed' ), true ) ) ? $row['status'] : 'start';
+			}
+			$out[] = $item;
+		}
+		return $out;
+	}
+
+	/** Turns the JSON sent by the browser into a safe, known structure (or null). */
+	private function clean_draft( $raw ) {
+		if ( ! is_string( $raw ) || $raw === '' || strlen( $raw ) > 1048576 ) return null;
+		$d = json_decode( $raw, true );
+		if ( ! is_array( $d ) || empty( $d['date'] ) || ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $d['date'] ) ) return null;
+		$f = ( isset( $d['fields'] ) && is_array( $d['fields'] ) ) ? $d['fields'] : array();
+
+		$fields = array();
+		foreach ( array( 'sdc_daily_text', 'sdc_highlights', 'sdc_talking_head', 'sdc_podcasts', 'sdc_lessons', 'sdc_posts_entries' ) as $k ) {
+			$fields[ $k ] = isset( $f[ $k ] ) ? wp_kses_post( (string) $f[ $k ] ) : '';
+		}
+		foreach ( array( 'sdc_ykw', 'sdc_sport', 'sdc_shower' ) as $k ) {
+			$fields[ $k ] = ! empty( $f[ $k ] );
+		}
+		$fields['sdc_weight']        = ( isset( $f['sdc_weight'] ) && is_numeric( $f['sdc_weight'] ) ) ? (string) floatval( $f['sdc_weight'] ) : '';
+		$fields['sdc_image_url']     = isset( $f['sdc_image_url'] ) ? esc_url_raw( (string) $f['sdc_image_url'] ) : '';
+		$fields['sdc_image_caption'] = isset( $f['sdc_image_caption'] ) ? sanitize_textarea_field( (string) $f['sdc_image_caption'] ) : '';
+
+		$ids = function ( $list ) {
+			return is_array( $list ) ? array_values( array_filter( array_map( 'intval', array_slice( $list, 0, 200 ) ) ) ) : array();
+		};
+
+		return array(
+			'date'           => $d['date'],
+			'fields'         => $fields,
+			'books'          => $this->clean_rows( isset( $d['books'] ) ? $d['books'] : array(), true ),
+			'films'          => $this->clean_rows( isset( $d['films'] ) ? $d['films'] : array(), false ),
+			'series'         => $this->clean_rows( isset( $d['series'] ) ? $d['series'] : array(), true ),
+			'deleted_books'  => $ids( isset( $d['deleted_books'] ) ? $d['deleted_books'] : array() ),
+			'deleted_series' => $ids( isset( $d['deleted_series'] ) ? $d['deleted_series'] : array() ),
+			'saved'          => time(),
+		);
+	}
+
+	public function ajax_discard_draft() {
+		$this->require_unlocked();
+		delete_user_meta( get_current_user_id(), self::META_DRAFT );
+		wp_send_json_success( 'discarded' );
 	}
 
 	// =========================================================
@@ -223,10 +313,27 @@ class SimpleDailyCalendar {
 		wp_send_json_success( 'ok' );
 	}
 
+	/**
+	 * Locks this tab. If the browser sends the text you were writing, it is kept
+	 * as a draft and offered back after the next PIN unlock. Storing a draft does
+	 * not need a live session (it may have just expired); reading it back does.
+	 */
 	public function ajax_lock() {
 		check_ajax_referer( 'sdc_nonce', 'security' );
-		if ( is_user_logged_in() ) $this->end_session( get_current_user_id(), $this->posted_token() );
-		wp_send_json_success( 'locked' );
+		if ( ! is_user_logged_in() ) wp_send_json_success( 'locked' );
+		$uid = get_current_user_id();
+
+		$draft_saved = false;
+		if ( $this->can_use_calendar() && isset( $_POST['draft'] ) ) {
+			$draft = $this->clean_draft( wp_unslash( $_POST['draft'] ) );
+			if ( $draft ) {
+				update_user_meta( $uid, self::META_DRAFT, $draft );
+				$draft_saved = true;
+			}
+		}
+
+		$this->end_session( $uid, $this->posted_token() );
+		wp_send_json_success( array( 'locked' => true, 'draft_saved' => $draft_saved ) );
 	}
 
 	/**
@@ -423,6 +530,7 @@ class SimpleDailyCalendar {
 				'can_edit'      => current_user_can( 'edit_posts' ),
 				'has_pin'       => (bool) get_user_meta( get_current_user_id(), self::META_PIN, true ),
 				'idle_seconds'  => self::IDLE_SECONDS,
+				'writing_idle_seconds' => self::WRITING_IDLE_SECONDS,
 				'user_key'      => md5( get_current_user_id() . wp_salt( 'nonce' ) ),
 			);
 			wp_localize_script( 'sdc-lock', 'sdcVars', $vars );
@@ -642,6 +750,7 @@ class SimpleDailyCalendar {
 
 		<div id="sdc-idle-warning" class="sdc-idle-warning" style="display:none;" role="status">
 			Locking in <strong id="sdc-idle-count">10</strong> s – move the mouse or press a key to stay unlocked.
+			<span id="sdc-idle-note" style="display:none;"><br>Don't worry, the text you are writing will be kept.</span>
 		</div>
 
 		<div id="sdc-filter-bar-container"></div>
@@ -670,6 +779,7 @@ class SimpleDailyCalendar {
 							<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
 						<?php endif; ?>
 						<button type="button" class="button sdc-close-btn">Close</button>
+						<button type="button" class="button sdc-lock-now-modal" title="Lock now">🔒 Lock</button>
 					</div>
 				</div>
 				<div id="sdc-loading" style="display:none;">Loading data...</div>
@@ -713,6 +823,11 @@ class SimpleDailyCalendar {
 
 					<?php if ( current_user_can( 'edit_posts' ) ) : ?>
 					<div id="sdc-edit-mode" style="display:none;">
+						<div id="sdc-draft-banner" class="sdc-draft-banner" style="display:none;">
+							<span>↩️ <strong>Restored:</strong> the text you were writing when Kalendarz locked<span id="sdc-draft-when"></span>.
+							Click <em>Save Content</em> to keep it.</span>
+							<button type="button" id="sdc-draft-discard" class="button">Discard it</button>
+						</div>
 						<form id="sdc-content-form">
 							<input type="hidden" id="sdc_date_field" name="sdc_date_field" value="">
 
@@ -1065,6 +1180,12 @@ class SimpleDailyCalendar {
 					$wpdb->delete( $this->table_series, array( 'id' => intval($id) ) );
 				}
 			}
+		}
+
+		// The rescued draft for this day has now been saved for real.
+		$draft = get_user_meta( get_current_user_id(), self::META_DRAFT, true );
+		if ( is_array( $draft ) && isset( $draft['date'] ) && $draft['date'] === $event_date ) {
+			delete_user_meta( get_current_user_id(), self::META_DRAFT );
 		}
 
 		wp_send_json_success( 'Saved successfully!' );

@@ -3,7 +3,10 @@
  *
  * - Shows a PIN screen before anything from the calendar is loaded.
  * - The server only returns calendar data to an unlocked session (token).
- * - Locks automatically after `idle_seconds` (60) without mouse / keyboard / touch.
+ * - Locks automatically after `idle_seconds` (60) without mouse / keyboard / touch,
+ *   or after `writing_idle_seconds` (300) while an entry is being written.
+ * - If it locks with unsaved text, the text is sent to the server as a draft
+ *   and offered back after the PIN is entered again.
  * - Survives the plugin's own page reloads (after Save etc.) for the same tab,
  *   as long as the idle limit has not passed.
  */
@@ -12,8 +15,10 @@
 
     var V        = window.sdcVars || {};
     var IDLE_MS  = (parseInt(V.idle_seconds, 10) || 60) * 1000;
-    var WARN_MS  = 10 * 1000;   // show the countdown for the last 10 s
-    var PING_MS  = 20 * 1000;   // heartbeat while active (server forgets after 90 s)
+    var WRITE_MS = (parseInt(V.writing_idle_seconds, 10) || 300) * 1000; // while writing
+    var WARN_MS  = 10 * 1000;   // countdown for the last 10 s (normal)
+    var WARN_WRITE_MS = 30 * 1000; // countdown for the last 30 s (writing)
+    var PING_MS  = 20 * 1000;   // heartbeat while the calendar is open
     var KEY_TOK  = 'sdc_tok_' + (V.user_key || '');
     var KEY_ACT  = 'sdc_act_' + (V.user_key || '');
 
@@ -29,6 +34,12 @@
     var callbacks = [];
     var mode = 'unlock';
     var resetToken = null;
+    var editorApi = null;   // registered by sdc-script.js: { isWriting(), collectDraft() }
+
+    function isWriting() {
+        try { return !!(editorApi && editorApi.isWriting()); } catch (e) { return false; }
+    }
+    function currentLimit() { return isWriting() ? WRITE_MS : IDLE_MS; }
 
     // ---------- storage (tab-only; cleared when the tab is closed) ----------
     function store(k, v) {
@@ -63,9 +74,15 @@
         unlocked = false;
         if (ticker) clearInterval(ticker);
 
-        // Hide everything immediately, before the reload wipes it.
+        // Grab any unsaved text BEFORE the page is wiped.
+        var draft = null;
+        try { draft = editorApi ? editorApi.collectDraft() : null; } catch (e) { draft = null; }
+
+        // Remove everything immediately, before the reload. Removing (not just
+        // hiding) also stops the browser from refilling form fields after reload.
         var app = document.getElementById('sdc-app');
-        if (app) app.style.display = 'none';
+        if (app && app.parentNode) app.parentNode.removeChild(app);
+        hideWarning();
         $('.media-modal, .media-modal-backdrop').hide();
 
         var t = token;
@@ -73,18 +90,32 @@
         store(KEY_TOK, null);
         store(KEY_ACT, null);
 
+        // A fresh page load is the only way to be sure nothing stays in memory/DOM.
+        var reloaded = false;
+        function reload() { if (!reloaded) { reloaded = true; window.location.reload(); } }
+
+        var fd = new FormData();
+        fd.append('action', 'sdc_lock');
+        fd.append('security', V.nonce);
+        if (t) fd.append('sdc_token', t);
+
+        if (draft) {
+            // Wait for the server to store the draft, then reload.
+            fd.append('draft', JSON.stringify(draft));
+            showMode('checking');
+            $('#sdc-lock-title').text('Locking… saving what you were writing');
+            $.ajax({ url: V.ajax_url, type: 'POST', data: fd, processData: false, contentType: false, timeout: 8000 })
+                .always(reload);
+            setTimeout(reload, 10000);
+            return;
+        }
+
         try {
-            var fd = new FormData();
-            fd.append('action', 'sdc_lock');
-            fd.append('security', V.nonce);
-            if (t) fd.append('sdc_token', t);
             if (!(navigator.sendBeacon && navigator.sendBeacon(V.ajax_url, fd))) {
                 $.ajax({ url: V.ajax_url, type: 'POST', data: fd, processData: false, contentType: false });
             }
         } catch (e) {}
-
-        // A fresh page load is the only way to be sure nothing stays in memory/DOM.
-        window.location.reload();
+        reload();
     }
 
     // ---------- activity tracking ----------
@@ -92,7 +123,7 @@
         if (!unlocked) return;
         var now = Date.now();
         // Coming back after the limit (e.g. laptop woke up) must lock, not extend.
-        if (now - lastActivity >= IDLE_MS) { lockNow(); return; }
+        if (now - lastActivity >= currentLimit()) { lockNow(); return; }
         lastActivity = now;
         if (now - lastSaved > 1000) { store(KEY_ACT, String(now)); lastSaved = now; }
     }
@@ -105,16 +136,21 @@
         if (!unlocked) return;
         var now = Date.now();
         var idle = now - lastActivity;
+        var writing = isWriting();
+        var limit = writing ? WRITE_MS : IDLE_MS;
+        var warn = writing ? WARN_WRITE_MS : WARN_MS;
 
-        if (idle >= IDLE_MS) { lockNow(); return; }
+        if (idle >= limit) { lockNow(); return; }
 
-        if (idle >= IDLE_MS - WARN_MS) {
-            showWarning(Math.ceil((IDLE_MS - idle) / 1000));
+        if (idle >= limit - warn) {
+            showWarning(Math.ceil((limit - idle) / 1000), writing);
         } else {
             hideWarning();
         }
 
-        if (lastActivity > lastPing && now - lastPing >= PING_MS) {
+        // Keep the server session alive while the page is open; the idle
+        // limits above are what decide when it locks.
+        if (now - lastPing >= PING_MS) {
             lastPing = now;
             $.post(V.ajax_url, { action: 'sdc_ping', security: V.nonce });
         }
@@ -126,13 +162,15 @@
     window.addEventListener('focus', tick);
     window.addEventListener('pageshow', function (e) {
         // Page restored from the back/forward cache.
-        if (e.persisted && unlocked && Date.now() - lastActivity >= IDLE_MS) lockNow();
+        if (e.persisted && unlocked && Date.now() - lastActivity >= currentLimit()) lockNow();
     });
 
-    function showWarning(sec) {
+    function showWarning(sec, writing) {
         var w = document.getElementById('sdc-idle-warning');
         var c = document.getElementById('sdc-idle-count');
+        var n = document.getElementById('sdc-idle-note');
         if (c) c.textContent = sec;
+        if (n) n.style.display = writing ? 'inline' : 'none';
         if (w) w.style.display = 'block';
     }
     function hideWarning() {
@@ -141,7 +179,7 @@
     }
 
     // ---------- unlocked ----------
-    function enter(eventsJson, activityAt) {
+    function enter(eventsJson, activityAt, draft) {
         unlocked = true;
         locking = false;
         lastActivity = activityAt || Date.now();
@@ -158,7 +196,7 @@
         eventsJsonCache = eventsJson;
         if (!started) {
             started = true;
-            callbacks.forEach(function (cb) { cb(eventsJson); });
+            callbacks.forEach(function (cb) { cb(eventsJson, draft || null); });
             callbacks = [];
         }
     }
@@ -216,7 +254,7 @@
             btn.prop('disabled', true);
             $.post(V.ajax_url, { action: 'sdc_unlock', security: V.nonce, pin: pin })
                 .done(function (res) {
-                    if (res && res.success) { token = res.data.token; enter(res.data.events_json); }
+                    if (res && res.success) { token = res.data.token; enter(res.data.events_json, null, res.data.draft); }
                     else { btn.prop('disabled', false); setMsg('Something went wrong.', true); }
                 })
                 .fail(function (xhr) {
@@ -237,7 +275,7 @@
             if (mode === 'reset' && resetToken) data.reset_token = resetToken;
             $.post(V.ajax_url, data)
                 .done(function (res) {
-                    if (res && res.success) { resetToken = null; V.has_pin = true; token = res.data.token; enter(res.data.events_json); }
+                    if (res && res.success) { resetToken = null; V.has_pin = true; token = res.data.token; enter(res.data.events_json, null, res.data.draft); }
                     else { btn.prop('disabled', false); setMsg('Something went wrong.', true); }
                 })
                 .fail(function (xhr) {
@@ -267,8 +305,10 @@
     // ---------- public API for sdc-script.js ----------
     window.sdcLock = {
         onUnlock: function (cb) {
-            if (started) cb(eventsJsonCache); else callbacks.push(cb);
+            if (started) cb(eventsJsonCache, null); else callbacks.push(cb);
         },
+        // sdc-script.js tells the lock whether you are writing and how to grab unsaved text.
+        registerEditor: function (api) { editorApi = api; },
         lockNow: lockNow
     };
 
@@ -281,7 +321,7 @@
             e.preventDefault();
             showMode(mode === 'forgot' ? 'unlock' : 'forgot');
         });
-        $('#sdc-lock-now').on('click', function () { lockNow(); });
+        $(document).on('click', '#sdc-lock-now, .sdc-lock-now-modal', function (e) { e.preventDefault(); lockNow(); });
 
         // Arrived from a "Forgot PIN" e-mail link?
         var url = new URL(window.location.href);
