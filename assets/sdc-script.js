@@ -4,12 +4,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Nothing is built until the PIN has been accepted; the calendar data
     // arrives from the server only at that moment.
-    window.sdcLock.onUnlock(function(eventsJson) {
-        sdcStartApp(calendarEl, eventsJson);
+    window.sdcLock.onUnlock(function(eventsJson, draft) {
+        sdcStartApp(calendarEl, eventsJson, draft);
     });
 });
 
-function sdcStartApp(calendarEl, eventsJson) {
+function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     // --- FILTER LOGIC ---
     const masterEvents = JSON.parse(eventsJson);
     let activeFilter = 'all';
@@ -184,8 +184,126 @@ function sdcStartApp(calendarEl, eventsJson) {
 
     const closeModal = () => {
         modal.style.display = 'none';
+        dirty = false;
         destroyEditors();
     };
+
+    // --- WRITING STATE (used by the PIN lock) ---
+    // "dirty" = something was typed/changed in the Day Content form and not saved yet.
+    let dirty = false;
+    const markDirty = () => { dirty = true; };
+
+    const contentFormEl = document.getElementById('sdc-content-form');
+    if (contentFormEl) {
+        contentFormEl.addEventListener('input', markDirty);
+        contentFormEl.addEventListener('change', markDirty);
+        contentFormEl.addEventListener('click', function(e) {
+            if (e.target.closest('.sdc-remove-row-btn')) markDirty();
+        });
+    }
+
+    function focusIsInTextField() {
+        const el = document.activeElement;
+        if (!el || !modal.contains(el)) return false;
+        if (el.isContentEditable || el.tagName === 'TEXTAREA') return true;
+        return el.tagName === 'INPUT' && /^(text|number|url|search|email|)$/i.test(el.type || '');
+    }
+
+    function collectRows(selector, withStatus) {
+        const out = [];
+        document.querySelectorAll(selector + ' .sdc-item-row').forEach(row => {
+            const title = row.querySelector('.sdc-item-title').value.trim();
+            if (!title) return;
+            const item = { id: row.dataset.id || '', title: title, rating: row.querySelector('.sdc-item-rating').value };
+            if (withStatus) item.status = row.querySelector('.sdc-item-status').value;
+            out.push(item);
+        });
+        return out;
+    }
+
+    function collectDraft() {
+        if (!dirty || modal.style.display === 'none') return null;
+        const date = document.getElementById('sdc_date_field').value;
+        if (!date) return null;
+        updateEditorContent();
+        const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+        const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
+        const fields = {
+            sdc_image_url: val('sdc_image_url'), sdc_image_caption: val('sdc_image_caption'),
+            sdc_ykw: chk('sdc_ykw'), sdc_sport: chk('sdc_sport'), sdc_shower: chk('sdc_shower'),
+            sdc_weight: val('sdc_weight')
+        };
+        ['sdc_daily_text','sdc_highlights','sdc_talking_head','sdc_podcasts','sdc_lessons','sdc_posts_entries'].forEach(id => {
+            fields[id] = editors[id] ? editors[id].getData() : val(id);
+        });
+        return {
+            date: date,
+            fields: fields,
+            books: collectRows('#sdc-books-rows', true),
+            films: collectRows('#sdc-films-rows', false),
+            series: collectRows('#sdc-series-rows', true),
+            deleted_books: deletedBookIds.slice(),
+            deleted_series: deletedSeriesIds.slice()
+        };
+    }
+
+    window.sdcLock.registerEditor({
+        isWriting: () => modal.style.display !== 'none' && (dirty || focusIsInTextField()),
+        collectDraft: collectDraft
+    });
+
+    // --- RESTORING A RESCUED DRAFT ---
+    const draftBanner = document.getElementById('sdc-draft-banner');
+
+    function applyDraft(draft) {
+        const f = draft.fields || {};
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v === null || v === undefined) ? '' : v; };
+        const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+
+        setVal('sdc_image_url', f.sdc_image_url);
+        setVal('sdc_image_caption', f.sdc_image_caption);
+        setVal('sdc_weight', f.sdc_weight);
+        setChk('sdc_ykw', f.sdc_ykw); setChk('sdc_sport', f.sdc_sport); setChk('sdc_shower', f.sdc_shower);
+
+        const textIds = ['sdc_daily_text','sdc_highlights','sdc_talking_head','sdc_podcasts','sdc_lessons','sdc_posts_entries'];
+        textIds.forEach(id => setVal(id, f[id]));
+
+        ['sdc-books-rows','sdc-films-rows','sdc-series-rows'].forEach(id => {
+            const c = document.getElementById(id); if (c) c.innerHTML = '';
+        });
+        (draft.books || []).forEach(b => addBookRow(b));
+        (draft.films || []).forEach(x => addFilmRow(x));
+        (draft.series || []).forEach(s => addSeriesRow(s));
+        deletedBookIds = (draft.deleted_books || []).map(String);
+        deletedSeriesIds = (draft.deleted_series || []).map(String);
+
+        showEdit();
+        // Editors are created asynchronously; put the text in once they exist.
+        editorsReady().then(() => {
+            textIds.forEach(id => { if (editors[id]) editors[id].setData(f[id] || ''); });
+            dirty = true;
+        });
+        dirty = true;
+
+        if (draftBanner) {
+            const when = document.getElementById('sdc-draft-when');
+            if (when && draft.saved) {
+                const d = new Date(draft.saved * 1000);
+                when.textContent = ' (' + d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')';
+            }
+            draftBanner.style.display = 'flex';
+        }
+    }
+
+    const discardBtn = document.getElementById('sdc-draft-discard');
+    if (discardBtn) {
+        discardBtn.addEventListener('click', function() {
+            if (!confirm('Throw away the restored text?')) return;
+            const date = document.getElementById('sdc_date_field').value;
+            jQuery.post(sdcVars.ajax_url, { action: 'sdc_discard_draft', security: sdcVars.nonce })
+                .always(() => { dirty = false; openModalForDate(date, 'standard'); });
+        });
+    }
 
     // --- DAY NAVIGATION (PREVIOUS / NEXT) ---
     function sdcGetDateAdjusted(dateStr, days) {
@@ -227,20 +345,32 @@ function sdcStartApp(calendarEl, eventsJson) {
 
     if(editTopBtn) editTopBtn.addEventListener('click', showEdit);
     if(document.getElementById('sdc-btn-switch-to-edit')) document.getElementById('sdc-btn-switch-to-edit').addEventListener('click', showEdit);
-    if(document.getElementById('sdc-cancel-edit-btn')) document.getElementById('sdc-cancel-edit-btn').addEventListener('click', showView);
+    if(document.getElementById('sdc-cancel-edit-btn')) document.getElementById('sdc-cancel-edit-btn').addEventListener('click', () => { dirty = false; showView(); });
 
     // --- CKEDITOR HELPERS ---
+    let editorsPromise = Promise.resolve();
+    let editorsCreating = false;
+    const editorsReady = () => editorsPromise;
+
     function initEditors() {
-        if (Object.keys(editors).length > 0) return;
+        if (Object.keys(editors).length > 0 || editorsCreating) return editorsPromise;
+        editorsCreating = true;
+        const creating = [];
         const textareas = document.querySelectorAll('.sdc-editor');
         textareas.forEach(el => {
             if(!editors[el.id]) {
-                ClassicEditor
+                creating.push(ClassicEditor
                     .create(el, { toolbar: [ 'bold', 'italic', '|', 'undo', 'redo' ] })
-                    .then(editor => { editors[el.id] = editor; })
-                    .catch(error => { console.error(error); });
+                    .then(editor => {
+                        editors[el.id] = editor;
+                        // Typing in the editor counts as unsaved writing.
+                        editor.model.document.on('change:data', markDirty);
+                    })
+                    .catch(error => { console.error(error); }));
             }
         });
+        editorsPromise = Promise.all(creating).then(() => { editorsCreating = false; });
+        return editorsPromise;
     }
 
     function destroyEditors() {
@@ -466,8 +596,10 @@ function sdcStartApp(calendarEl, eventsJson) {
     if (addSeriesBtn) addSeriesBtn.addEventListener('click', function() { addSeriesRow({}); });
 
     // --- MAIN LOGIC ---
-    function openModalForDate(dateStr, mode = 'standard') {
+    function openModalForDate(dateStr, mode = 'standard', draft = null) {
         modal.style.display = 'block';
+        dirty = false;
+        if (draftBanner) draftBanner.style.display = 'none';
 
         if ( ! sdcVars.can_edit ) {
             loading.style.display = 'none';
@@ -722,9 +854,18 @@ function sdcStartApp(calendarEl, eventsJson) {
                             eventList.innerHTML = '<li>No events set for this period.</li>';
                         }
                     }
+
+                    // F. Loading the day is not "writing"; a restored draft is.
+                    dirty = false;
+                    if (draft) applyDraft(draft);
                 }
             }
         });
+    }
+
+    // Kalendarz locked while you were writing? Bring that text back.
+    if (pendingDraft && pendingDraft.date) {
+        openModalForDate(pendingDraft.date, 'standard', pendingDraft);
     }
 
     // --- SAVE HANDLERS ---

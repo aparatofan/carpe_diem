@@ -440,3 +440,19 @@
     font-size: 0.95em;
     text-align: center;
 }
+
+/* Restored-draft banner (v5.6) */
+.sdc-draft-banner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    padding: 10px 14px;
+    background: #fff8e1;
+    border: 1px solid #f0c36d;
+    border-radius: 8px;
+    font-size: 0.95em;
+    line-height: 1.4;
+}
