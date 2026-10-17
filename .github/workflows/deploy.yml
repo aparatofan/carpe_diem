@@ -1,0 +1,91 @@
+# Uploads the plugin to mariuszmirecki.pl over FTP.
+#
+# Runs automatically after every merge/push to `main`, and can be started by hand
+# from GitHub → Actions → "Deploy to WordPress" → "Run workflow"
+# (tick "Test run" to see what WOULD be uploaded without changing anything).
+#
+# Needs four repository secrets (Settings → Secrets and variables → Actions):
+#   FTP_SERVER      e.g. ftp.mariuszmirecki.pl
+#   FTP_USERNAME
+#   FTP_PASSWORD
+#   FTP_PLUGIN_DIR  the plugin folder as seen after FTP login, ending with "/",
+#                   e.g. /public_html/wp-content/plugins/simple-daily-calendar/
+# Optional repository *variables* (same page, "Variables" tab):
+#   FTP_PROTOCOL    ftps (default) | ftp | ftps-legacy
+#   FTP_PORT        21 (default)
+
+name: Deploy to WordPress
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Test run – only list what would change, upload nothing'
+        type: boolean
+        default: false
+
+# Never run two uploads at the same time.
+concurrency:
+  group: deploy-wordpress
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the settings
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_PLUGIN_DIR: ${{ secrets.FTP_PLUGIN_DIR }}
+        run: |
+          missing=""
+          for v in FTP_SERVER FTP_USERNAME FTP_PASSWORD FTP_PLUGIN_DIR; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secret(s):$missing. Add them in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          # Safety: only ever upload into a plugin folder, never the site root.
+          case "$FTP_PLUGIN_DIR" in
+            */) ;;
+            *) echo "::error::FTP_PLUGIN_DIR must end with a slash, e.g. /public_html/wp-content/plugins/simple-daily-calendar/"; exit 1 ;;
+          esac
+          case "$FTP_PLUGIN_DIR" in
+            *wp-content/plugins/?*/) ;;
+            *) echo "::error::FTP_PLUGIN_DIR must point at the plugin's own folder inside wp-content/plugins/."; exit 1 ;;
+          esac
+          echo "Settings look fine."
+
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Check PHP syntax
+        run: |
+          for f in $(git ls-files '*.php'); do php -l "$f" >/dev/null || { echo "::error file=$f::PHP syntax error – nothing was uploaded."; exit 1; }; done
+          echo "PHP syntax OK."
+
+      - name: Upload changed files
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_PLUGIN_DIR }}
+          protocol: ${{ vars.FTP_PROTOCOL || 'ftps' }}
+          port: ${{ vars.FTP_PORT || 21 }}
+          local-dir: ./
+          dry-run: ${{ inputs.dry_run == true }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            README.md

@@ -128,7 +128,7 @@ HOW YOU TALK
 - Use light structure (short paragraphs, occasional bullet points) only when it helps.
 
 HOW YOU USE HIS DATA
-- His calendar holds daily entries: daily text (diary), highlights, "talking head" notes, podcasts & documentaries, books, films, series (with 0–6 ratings), Blue Tree lessons, posts & Enchiridion entries, habit check-boxes (YKW, sport, shower), weight in kg, holidays and events.
+- His calendar holds daily entries: daily text (diary), highlights, "talking head" notes, podcasts & documentaries, books, films, series (with 0–6 ratings), Blue Tree lessons, posts & Enchiridion entries, habit check-boxes (YKW, sport, shower, reading – he is building a daily reading habit, even a few pages a day), weight in kg, holidays and events.
 - Before making a claim about his life, look at the entries with your tools. Mention dates so he can check ("on 3 October you wrote…"). Never invent entries; if the data isn't there, say so.
 - Don't guess the meaning of private labels such as "YKW" – ask if you need to know.
 - Fetch only what a question needs; prefer narrow date ranges and searches.
@@ -451,7 +451,7 @@ TXT;
 		};
 		return array(
 			$fn( 'get_overview', 'Overview of the whole calendar: first and last entry dates, number of days with entries, totals of books/films/series, currently active books and series. Good first step for broad questions.', array(), array() ),
-			$fn( 'get_entries', 'Full entries for a date range (max ' . self::MAX_RANGE_DAYS . ' days): diary text, highlights, talking head, podcasts, lessons, posts, habits (YKW/sport/shower), weight, image caption, films watched, books/series started or finished, holidays and events.', array(
+			$fn( 'get_entries', 'Full entries for a date range (max ' . self::MAX_RANGE_DAYS . ' days): diary text, highlights, talking head, podcasts, lessons, posts, habits (YKW/sport/shower/reading), weight, image caption, films watched, books/series started or finished, holidays and events.', array(
 				'start_date' => $date,
 				'end_date'   => $date,
 			), array( 'start_date', 'end_date' ) ),
@@ -465,7 +465,7 @@ TXT;
 				'start_date' => $odate,
 				'end_date'   => $odate,
 			), array( 'kind', 'start_date', 'end_date' ) ),
-			$fn( 'get_stats', 'Numbers for a date range: days with entries, habit counts (YKW, sport, shower), weight (first, last, min, max, average, weekly averages), films watched, books and series finished.', array(
+			$fn( 'get_stats', 'Numbers for a date range: days with entries, habit counts (YKW, sport, shower, reading) and the current reading streak, weight (first, last, min, max, average, weekly averages), films watched, books and series finished.', array(
 				'start_date' => $date,
 				'end_date'   => $date,
 			), array( 'start_date', 'end_date' ) ),
@@ -582,7 +582,7 @@ TXT;
 		foreach ( (array) $rows as $r ) {
 			$d = $day( $r['event_date'] );
 			$habits = array();
-			foreach ( array( 'ykw' => 'YKW', 'sport' => 'sport', 'shower' => 'shower' ) as $k => $label ) {
+			foreach ( array( 'ykw' => 'YKW', 'sport' => 'sport', 'shower' => 'shower', 'reading' => 'reading' ) as $k => $label ) {
 				if ( ! empty( $r[ $k ] ) ) $habits[] = $label;
 			}
 			$entry = array(
@@ -717,14 +717,27 @@ TXT;
 		return $out;
 	}
 
+	/** Consecutive days with the reading box ticked, ending on $end (or the day before, if $end isn't ticked yet). */
+	private function reading_streak( $end ) {
+		global $wpdb;
+		$c = $this->t;
+		$dates = $wpdb->get_col( $wpdb->prepare( "SELECT event_date FROM {$c['content']} WHERE reading = 1 AND event_date <= %s ORDER BY event_date DESC LIMIT 400", $end ) );
+		$set = array_flip( (array) $dates );
+		$d = strtotime( $end . ' 00:00:00 UTC' );
+		if ( ! isset( $set[ gmdate( 'Y-m-d', $d ) ] ) ) $d -= DAY_IN_SECONDS;
+		$n = 0;
+		while ( isset( $set[ gmdate( 'Y-m-d', $d ) ] ) ) { $n++; $d -= DAY_IN_SECONDS; }
+		return array( 'days' => $n, 'through' => $n ? gmdate( 'Y-m-d', $d + DAY_IN_SECONDS * $n ) : null );
+	}
+
 	private function tool_stats( $a ) {
 		global $wpdb;
 		$c = $this->t;
 		list( $s, $e ) = $this->range( $a, true );
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT event_date, ykw, sport, shower, weight FROM {$c['content']} WHERE event_date >= %s AND event_date <= %s ORDER BY event_date", $s, $e ), ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT event_date, ykw, sport, shower, reading, weight FROM {$c['content']} WHERE event_date >= %s AND event_date <= %s ORDER BY event_date", $s, $e ), ARRAY_A );
 		$days_in_range = (int) round( ( strtotime( $e ) - strtotime( $s ) ) / DAY_IN_SECONDS ) + 1;
 
-		$h = array( 'ykw' => 0, 'sport' => 0, 'shower' => 0 );
+		$h = array( 'ykw' => 0, 'sport' => 0, 'shower' => 0, 'reading' => 0 );
 		$w = array();
 		$weeks = array();
 		foreach ( (array) $rows as $r ) {
@@ -756,6 +769,7 @@ TXT;
 			'days_in_range'     => $days_in_range,
 			'days_with_entries' => count( (array) $rows ),
 			'habit_days'        => $h,
+			'reading_streak'    => $this->reading_streak( $e ),
 			'weight'            => $weight,
 			'films_watched'     => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$c['films']} WHERE event_date >= %s AND event_date <= %s", $s, $e ) ),
 			'books_finished'    => (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$c['books']} WHERE completion_date >= %s AND completion_date <= %s", $s, $e ) ),

@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Daily Calendar with Popups
- * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.0 – PIN lock, writing mode, Sol).
- * Version: 6.0
+ * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.1 – PIN lock, writing mode, Sol, reading habit).
+ * Version: 6.1
  * Author: AI Assistant
  */
 
@@ -12,7 +12,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.0';
+	const VERSION = '6.1';
+	// Bump when the database tables change; existing sites are upgraded automatically.
+	const DB_VERSION = '6.1';
+	const OPT_DB_VERSION = 'sdc_db_version';
 
 	// --- PIN LOCK SETTINGS ---
 	// Browser locks after this many seconds without mouse/keyboard/touch activity.
@@ -60,6 +63,8 @@ class SimpleDailyCalendar {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'template_redirect', array( $this, 'maybe_no_cache' ) );
 		add_action( 'admin_init', array( $this, 'maybe_create_tables' ) );
+		// Files can arrive by automatic deploy (no plugin re-activation), so check the DB on every load.
+		add_action( 'init', array( $this, 'maybe_upgrade_db' ) );
 
 		// AJAX Endpoints
 		add_action( 'wp_ajax_sdc_get_content', array( $this, 'ajax_get_content' ) );
@@ -251,7 +256,7 @@ class SimpleDailyCalendar {
 		foreach ( array( 'sdc_daily_text', 'sdc_highlights', 'sdc_talking_head', 'sdc_podcasts', 'sdc_lessons', 'sdc_posts_entries' ) as $k ) {
 			$fields[ $k ] = isset( $f[ $k ] ) ? wp_kses_post( (string) $f[ $k ] ) : '';
 		}
-		foreach ( array( 'sdc_ykw', 'sdc_sport', 'sdc_shower' ) as $k ) {
+		foreach ( array( 'sdc_ykw', 'sdc_sport', 'sdc_shower', 'sdc_reading' ) as $k ) {
 			$fields[ $k ] = ! empty( $f[ $k ] );
 		}
 		$fields['sdc_weight']        = ( isset( $f['sdc_weight'] ) && is_numeric( $f['sdc_weight'] ) ) ? (string) floatval( $f['sdc_weight'] ) : '';
@@ -442,6 +447,7 @@ class SimpleDailyCalendar {
 			ykw TINYINT(1) DEFAULT 0,
 			sport TINYINT(1) DEFAULT 0,
 			shower TINYINT(1) DEFAULT 0,
+			reading TINYINT(1) DEFAULT 0,
 			weight FLOAT,
 			highlights TEXT,
 			daily_text LONGTEXT,
@@ -511,6 +517,23 @@ class SimpleDailyCalendar {
 		dbDelta( $sql6 );
 		foreach ( $this->sol->create_tables_sql( $charset_collate ) as $sql ) {
 			dbDelta( $sql );
+		}
+	}
+
+	/**
+	 * Brings an existing database up to DB_VERSION (e.g. adds the `reading` column in 6.1).
+	 * Cheap: one option read per request; the real work runs once after an update.
+	 */
+	public function maybe_upgrade_db() {
+		if ( get_option( self::OPT_DB_VERSION ) === self::DB_VERSION ) return;
+		global $wpdb;
+		$this->create_tables(); // dbDelta adds missing columns, never removes data
+		// Belt and braces: make sure the column really exists before saves start using it.
+		if ( ! $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $this->table_content LIKE %s", 'reading' ) ) ) {
+			$wpdb->query( "ALTER TABLE $this->table_content ADD COLUMN reading TINYINT(1) DEFAULT 0 AFTER shower" );
+		}
+		if ( $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $this->table_content LIKE %s", 'reading' ) ) ) {
+			update_option( self::OPT_DB_VERSION, self::DB_VERSION, false );
 		}
 	}
 
@@ -600,6 +623,7 @@ class SimpleDailyCalendar {
 			$icons = '';
 			if ( ! empty( $row['weight'] ) ) $icons .= '⚖️ ';
 			if ( $row['shower'] == 1 ) $icons .= '🚿 ';
+			if ( ! empty( $row['reading'] ) ) $icons .= '👓 ';
 			if ( $row['sport'] == 1 )  $icons .= '🚴 ';
 			if ( $row['ykw'] == 1 )    $icons .= '🤫 ';
 			if ( ! empty( $row['highlights'] ) )    $icons .= '⭐ ';
@@ -626,6 +650,7 @@ class SimpleDailyCalendar {
 						'type' => 'content',
 						'weight' => !empty($row['weight']),
 						'shower' => $row['shower'] == 1,
+						'reading' => ! empty( $row['reading'] ),
 						'sport'  => $row['sport'] == 1,
 						'ykw'    => $row['ykw'] == 1,
 						'highlights' => !empty($row['highlights']),
@@ -854,7 +879,9 @@ class SimpleDailyCalendar {
 									<span style="font-weight:bold; margin-right:10px;">Habits:</span>
 									<label><input type="checkbox" id="sdc_ykw" name="sdc_ykw" value="1"> 🤫 YKW</label> &nbsp;
 									<label><input type="checkbox" id="sdc_sport" name="sdc_sport" value="1"> 🚴 SPORT</label> &nbsp;
-									<label><input type="checkbox" id="sdc_shower" name="sdc_shower" value="1"> 🚿 SHOWER</label>
+									<label><input type="checkbox" id="sdc_shower" name="sdc_shower" value="1"> 🚿 SHOWER</label> &nbsp;
+									<label title="Read today – even a few pages counts"><input type="checkbox" id="sdc_reading" name="sdc_reading" value="1"> 👓 READING</label>
+									<span id="sdc-reading-streak" class="sdc-streak"></span>
 								</div>
 								<div>
 									<label for="sdc_weight" style="font-weight:bold;">Weight (kg):</label>
@@ -1083,6 +1110,7 @@ class SimpleDailyCalendar {
 			'ykw'          => isset($_POST['sdc_ykw']) ? 1 : 0,
 			'sport'        => isset($_POST['sdc_sport']) ? 1 : 0,
 			'shower'       => isset($_POST['sdc_shower']) ? 1 : 0,
+			'reading'      => isset($_POST['sdc_reading']) ? 1 : 0,
 			'weight'       => ( isset($_POST['sdc_weight']) && $_POST['sdc_weight'] !== '' ) ? floatval($_POST['sdc_weight']) : null,
 			'highlights'   => wp_kses_post( wp_unslash($_POST['sdc_highlights']) ),
 			'daily_text'   => wp_kses_post( wp_unslash($_POST['sdc_daily_text']) ),
@@ -1293,7 +1321,7 @@ class SimpleDailyCalendar {
 		ksort( $all_dates );
 
 		$header = [
-			'Date', 'YKW', 'Sport', 'Shower', 'Weight',
+			'Date', 'YKW', 'Sport', 'Shower', 'Reading', 'Weight',
 			'Highlights', 'Daily Text', 'Talking Head', 'Podcasts',
 			'Books', 'Films', 'Series', 'Lessons', 'Posts'
 		];
@@ -1371,6 +1399,7 @@ class SimpleDailyCalendar {
 				$row ? ($row['ykw'] ? '1' : '0') : '0',
 				$row ? ($row['sport'] ? '1' : '0') : '0',
 				$row ? ($row['shower'] ? '1' : '0') : '0',
+				$row ? ( ! empty( $row['reading'] ) ? '1' : '0' ) : '0',
 				$row ? $row['weight'] : '',
 				$row ? strip_tags( $row['highlights'] ) : '',
 				$row ? strip_tags( $row['daily_text'] ) : '',

@@ -9,6 +9,36 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
 - assets/sdc-lock.js – PIN lock screen + auto-lock
 - assets/sdc-sol.js – Sol chat panel
 - assets/sdc-style.css – CSS
+- .github/workflows/deploy.yml – automatic upload to the website (not uploaded itself)
+
+## Automatic deploy (since 6.1)
+Every merge into `main` uploads the changed files to the website by FTP
+(`.github/workflows/deploy.yml`). No manual copying. You can also start it by hand:
+GitHub → **Actions** → **Deploy to WordPress** → **Run workflow** (tick *Test run* to only
+see what would change).
+
+One-time setup – GitHub → **Settings** → **Secrets and variables** → **Actions** →
+**New repository secret**, four times:
+
+| Secret | Example |
+|---|---|
+| `FTP_SERVER` | `ftp.mariuszmirecki.pl` |
+| `FTP_USERNAME` | your FTP login |
+| `FTP_PASSWORD` | your FTP password |
+| `FTP_PLUGIN_DIR` | `/public_html/wp-content/plugins/simple-daily-calendar/` – the plugin's **existing** folder as you see it after FTP login, ending with `/` |
+
+Optional (**Variables** tab): `FTP_PROTOCOL` = `ftp` if your host has no FTPS (default `ftps`),
+`FTP_PORT` if it isn't 21.
+
+The deploy refuses to run if a secret is missing, if `FTP_PLUGIN_DIR` isn't a folder inside
+`wp-content/plugins/`, or if a PHP file has a syntax error. It only uploads files that changed
+and never deletes anything it didn't upload itself. Database changes (like the new reading
+column) are applied automatically on the next page load.
+
+## Habits
+🤫 YKW · 🚴 Sport · 🚿 Shower · 👓 Reading (6.1). Reading shows a streak counter next to the
+box (“Keep your 4-day streak going”) and in the day view; it's in the filter bar, the CSV
+export and Sol's statistics (`reading_streak`).
 
 ## PIN lock (since 5.5)
 - The first time you open the calendar page you are asked to choose a PIN (4–8 digits).
