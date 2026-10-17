@@ -11,12 +11,12 @@
 # Copied from the TBT drag-and-drop plugin's deploy, which has proven reliable.
 #
 # Differences from the TBT version:
-# - The server directory comes from the FTP_SERVER_DIR secret, because this
-#   site's FTP account starts above public_html, so the full path is needed:
-#   /public_html/autoinstalator/mariuszmirecki.pl/wordpress129219/wp-content/plugins/simple-daily-calendar/
-#   A missing leading or trailing slash is added automatically. The folder must
-#   stay the installed plugin folder, and simple-daily-calendar.php must keep
-#   its name — see the preflight below.
+# - The server directory comes from the FTP_SERVER_DIR secret (the full path
+#   of the plugin folder as the hosting file manager shows it). The FTP login
+#   may start lower down than the file manager, so the preflight also tries the
+#   path with its leading folders dropped one by one, and uses the first one
+#   that already holds simple-daily-calendar.php. It never picks a folder
+#   without that file. The path is masked in the logs (this repo is public).
 # - A PHP syntax check runs before anything is uploaded. A syntax error in an
 #   active plugin takes the whole site down.
 #
@@ -129,25 +129,47 @@ jobs:
             *)           url_scheme="ftp";  tls_flag="" ;;
           esac
 
-          # FTP_SERVER_DIR starts with "/", so putting another "/" before it
-          # yields the "//" curl needs to read the path as absolute — the same
-          # way the deploy action's client resolves it. Without that the two can
-          # disagree about which directory they are talking about.
-          target_url="$url_scheme://$FTP_SERVER:$PORT/$FTP_SERVER_DIR"
+          # Lists one folder and says whether it is the installed plugin folder.
+          # The folder starts with "/", so putting another "/" before it yields
+          # the "//" curl needs to read the path as absolute — the same way the
+          # deploy action's client resolves it.
+          is_plugin_dir() {
+            listing=$( curl -sS --insecure $tls_flag --connect-timeout 30 \
+                         --user "$FTP_USERNAME:$FTP_PASSWORD" \
+                         --list-only "$url_scheme://$FTP_SERVER:$PORT/$1" 2>&1 ) || return 1
+            printf '%s\n' "$listing" | tr -d '\r' | grep -qE '(^|/)simple-daily-calendar\.php$'
+          }
 
-          if ! listing=$( curl -sS --insecure $tls_flag --connect-timeout 30 \
-                            --user "$FTP_USERNAME:$FTP_PASSWORD" \
-                            --list-only "$target_url" 2>&1 ); then
-            echo "::error::Cannot list ${FTP_SERVER_DIR}. It probably does not exist as the deploy account sees it — which means the deploy would silently CREATE it and upload into a folder WordPress never loads. A deploy-only FTP account is often chrooted deeper than your desktop client. curl said: ${listing}"
-            exit 1
-          fi
+          # Try the full path first, then drop leading folders one at a time:
+          # /a/b/plugins/simple-daily-calendar/ → /b/plugins/… → … → /simple-daily-calendar/
+          rest="${FTP_SERVER_DIR#/}"
+          dropped=0
+          while :; do
+            candidate="/$rest"
+            echo "::add-mask::$candidate"
+            if is_plugin_dir "$candidate"; then
+              echo "FTP_SERVER_DIR=$candidate" >> "$GITHUB_ENV"
+              if [ "$dropped" -eq 0 ]; then
+                echo "Target verified: simple-daily-calendar.php is present, this is the installed plugin folder."
+              else
+                echo "Target verified after dropping the first $dropped folder(s) of FTP_SERVER_DIR: simple-daily-calendar.php is present, this is the installed plugin folder."
+                echo "::notice::The FTP login starts $dropped folder(s) lower than FTP_SERVER_DIR says. This works as it is; to skip the search next time, remove the first $dropped folder(s) from the secret."
+              fi
+              exit 0
+            fi
+            case "$rest" in
+              */*/) rest="${rest#*/}"; dropped=$((dropped + 1)); sleep 2 ;;
+              *) break ;;
+            esac
+          done
 
-          if ! printf '%s\n' "$listing" | tr -d '\r' | grep -qE '(^|/)simple-daily-calendar\.php$'; then
-            echo "::error::${FTP_SERVER_DIR} exists but does not contain simple-daily-calendar.php, so it is not the installed plugin folder. Uploading there would leave the live site untouched. Set allow_create for a genuine first-time install."
-            exit 1
-          fi
-
-          echo "Target verified: simple-daily-calendar.php is present, this is the installed plugin folder."
+          # Nothing matched: show the top-level folders the FTP login sees, so the
+          # right value for FTP_SERVER_DIR can be worked out.
+          top=$( curl -sS --insecure $tls_flag --connect-timeout 30 \
+                   --user "$FTP_USERNAME:$FTP_PASSWORD" \
+                   --list-only "$url_scheme://$FTP_SERVER:$PORT/" 2>&1 | tr -d '\r' | head -30 | tr '\n' ' ' ) || true
+          echo "::error::No version of FTP_SERVER_DIR is a folder this FTP login can open that contains simple-daily-calendar.php, so nothing was uploaded. The login's top-level folders are: ${top}"
+          exit 1
 
       # A syntax error in an active plugin is a fatal error on every page of the
       # site, so check every PHP file before anything leaves GitHub.

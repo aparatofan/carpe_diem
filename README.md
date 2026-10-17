@@ -14,8 +14,8 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
 ## Automatic deploy (since 6.1)
 Same deploy as the TBT plugins (copied from drag-and-drop). A push or merge to `main` runs
 `.github/workflows/deploy.yml`, which uploads changed files over FTPS to the folder in the
-`FTP_SERVER_DIR` secret
-(`/public_html/autoinstalator/mariuszmirecki.pl/wordpress129219/wp-content/plugins/simple-daily-calendar/`). Markdown files and `.github/` are not uploaded, and a
+`FTP_SERVER_DIR` secret (the plugin folder's full path as the hosting file manager shows it;
+if the FTP login starts lower down, the deploy drops leading folders until it finds the plugin). Markdown files and `.github/` are not uploaded, and a
 documentation-only push skips the deploy.
 
 Before uploading it checks that the four secrets exist (`FTP_SERVER`, `FTP_USERNAME`,
