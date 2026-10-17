@@ -13,12 +13,13 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
 
 ## Automatic deploy (since 6.1)
 Same deploy as the TBT plugins (copied from drag-and-drop). A push or merge to `main` runs
-`.github/workflows/deploy.yml`, which uploads changed files over FTPS to
-`/simple-daily-calendar/`. Markdown files and `.github/` are not uploaded, and a
+`.github/workflows/deploy.yml`, which uploads changed files over FTPS to the folder in the
+`FTP_SERVER_DIR` secret
+(`/public_html/autoinstalator/mariuszmirecki.pl/wordpress129219/wp-content/plugins/simple-daily-calendar/`). Markdown files and `.github/` are not uploaded, and a
 documentation-only push skips the deploy.
 
-Before uploading it checks that the three secrets exist (`FTP_SERVER`, `FTP_USERNAME`,
-`FTP_PASSWORD`), that `/simple-daily-calendar/` on the server already contains
+Before uploading it checks that the four secrets exist (`FTP_SERVER`, `FTP_USERNAME`,
+`FTP_PASSWORD`, `FTP_SERVER_DIR`), that that folder on the server already contains
 `simple-daily-calendar.php`, and that every PHP file has valid syntax. If an upload is cut
 off, it waits 60 s and retries once.
 
@@ -27,7 +28,7 @@ lists what would change; *protocol*, *port* and *log level* are there for troubl
 
 The action uploads but never deletes, so two names are fixed:
 - **`simple-daily-calendar.php`** must keep its name, or WordPress would show two plugins.
-- **`/simple-daily-calendar/`** must stay the server folder, for the same reason.
+- **`FTP_SERVER_DIR`** must stay the installed plugin folder, for the same reason.
 
 Database changes (like the new reading column) are applied automatically on the next page load.
 

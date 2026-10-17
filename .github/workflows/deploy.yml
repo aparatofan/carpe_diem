@@ -10,14 +10,15 @@
 #
 # Copied from the TBT drag-and-drop plugin's deploy, which has proven reliable.
 #
-# The server directory is /simple-daily-calendar/ and is fixed here rather than
-# read from a secret, because it is the folder the plugin is installed in and
-# the main file (simple-daily-calendar.php) must keep its name for the same
-# reason — see the preflight below. The path is as the FTP account sees it:
-# that account's home should be wp-content/plugins/ on mariuszmirecki.pl.
-#
-# One addition to the TBT version: a PHP syntax check before anything is
-# uploaded. A syntax error in an active plugin takes the whole site down.
+# Differences from the TBT version:
+# - The server directory comes from the FTP_SERVER_DIR secret, because this
+#   site's FTP account starts above public_html, so the full path is needed:
+#   /public_html/autoinstalator/mariuszmirecki.pl/wordpress129219/wp-content/plugins/simple-daily-calendar/
+#   A missing leading or trailing slash is added automatically. The folder must
+#   stay the installed plugin folder, and simple-daily-calendar.php must keep
+#   its name — see the preflight below.
+# - A PHP syntax check runs before anything is uploaded. A syntax error in an
+#   active plugin takes the whole site down.
 #
 # Note also that this action uploads but never deletes. A file removed from the
 # repository stays on the server; that is harmless for an asset nothing enqueues
@@ -68,9 +69,6 @@ concurrency:
   group: ftp-deploy
   cancel-in-progress: false
 
-env:
-  FTP_SERVER_DIR: /simple-daily-calendar/
-
 jobs:
   deploy:
     name: FTPS upload
@@ -88,9 +86,10 @@ jobs:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR }}
         run: |
           missing=""
-          for name in FTP_SERVER FTP_USERNAME FTP_PASSWORD; do
+          for name in FTP_SERVER FTP_USERNAME FTP_PASSWORD FTP_SERVER_DIR; do
             if [ -z "${!name}" ]; then
               missing="$missing $name"
             fi
@@ -99,6 +98,12 @@ jobs:
             echo "::error::Missing repository secret(s):$missing — add them under Settings → Secrets and variables → Actions."
             exit 1
           fi
+          # Normalise to /path/ so the preflight and the upload see the same folder.
+          dir="$(printf '%s' "$FTP_SERVER_DIR" | tr -d '\r\n' | sed -e 's#^[[:space:]]*##' -e 's#[[:space:]]*$##')"
+          case "$dir" in /*) ;; *) dir="/$dir" ;; esac
+          case "$dir" in */) ;; *) dir="$dir/" ;; esac
+          echo "::add-mask::$dir"
+          echo "FTP_SERVER_DIR=$dir" >> "$GITHUB_ENV"
 
       # The deploy client creates any directory it cannot find, so a wrong
       # server directory does not fail — it silently rebuilds the path as a new
@@ -168,7 +173,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /simple-daily-calendar/
+          server-dir: ${{ env.FTP_SERVER_DIR }}
           local-dir: ./
           # A push supplies no inputs, so these fall back to the safe defaults.
           protocol: ${{ inputs.protocol || 'ftps' }}
@@ -212,7 +217,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /simple-daily-calendar/
+          server-dir: ${{ env.FTP_SERVER_DIR }}
           local-dir: ./
           protocol: ${{ inputs.protocol || 'ftps' }}
           port: ${{ inputs.port || '21' }}
