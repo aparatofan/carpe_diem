@@ -669,3 +669,11 @@ body.sdc-sol-active { overflow: hidden; }
     .sdc-sol-msg { max-width: 92%; }
     .sdc-sol-form { padding: 10px 12px 12px; }
 }
+
+/* Reading streak (6.1) */
+.sdc-streak {
+    margin-left: 8px;
+    font-size: 0.85rem;
+    color: #8a5a00;
+    white-space: nowrap;
+}

@@ -15,11 +15,45 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     let activeFilter = 'all';
 
     const iconMap = {
-        'weight': '⚖️', 'shower': '🚿', 'sport': '🚴', 'ykw': '🤫',
+        'weight': '⚖️', 'shower': '🚿', 'sport': '🚴', 'ykw': '🤫', 'reading': '👓',
         'highlights': '⭐', 'daily_text': '📝', 'talking_head': '🗣️',
         'podcasts': '🎧', 'books': '📖', 'films': '🎬', 'series': '📺',
         'lessons': '🌳', 'posts_entries': '✍️'
     };
+
+    // --- READING STREAK ---
+    // Days with the reading box ticked, taken from the calendar data loaded at unlock.
+    const readingDays = new Set();
+    masterEvents.forEach(evt => {
+        if (evt.extendedProps && evt.extendedProps.reading) readingDays.add(String(evt.start).slice(0, 10));
+    });
+    function shiftDate(dateStr, days) {
+        const t = new Date(dateStr + 'T12:00:00Z');
+        t.setUTCDate(t.getUTCDate() + days);
+        return t.toISOString().slice(0, 10);
+    }
+    // Consecutive reading days ending on dateStr, counting dateStr itself only if tickedToday.
+    function readingStreakAt(dateStr, tickedToday) {
+        let n = tickedToday ? 1 : 0;
+        let d = shiftDate(dateStr, -1);
+        while (readingDays.has(d)) { n++; d = shiftDate(d, -1); }
+        return n;
+    }
+    function updateReadingStreak() {
+        const el = document.getElementById('sdc-reading-streak');
+        const box = document.getElementById('sdc_reading');
+        const dateEl = document.getElementById('sdc_date_field');
+        if (!el || !box || !dateEl || !dateEl.value) return;
+        const n = readingStreakAt(dateEl.value, box.checked);
+        const before = readingStreakAt(dateEl.value, false);
+        if (box.checked) {
+            el.textContent = n >= 2 ? '🔥 ' + n + '-day streak' : '🌱 Day 1 – well done';
+        } else {
+            el.textContent = before >= 1 ? '🔥 ' + before + (before === 1 ? ' day' : ' days') + ' – keep it going' : 'Even a few pages counts';
+        }
+    }
+    const readingBox = document.getElementById('sdc_reading');
+    if (readingBox) readingBox.addEventListener('change', updateReadingStreak);
 
     function getFilteredEvents() {
         if(activeFilter === 'all') return masterEvents;
@@ -43,6 +77,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             { id: 'shower', label: 'Shower', icon: '🚿' },
             { id: 'sport', label: 'Sport', icon: '🚴' },
             { id: 'ykw', label: 'YKW', icon: '🤫' },
+            { id: 'reading', label: 'Reading', icon: '👓' },
             { id: 'weight', label: 'Weight', icon: '⚖️' },
             { id: 'daily_text', label: 'Text', icon: '📝' },
             { id: 'highlights', label: 'Highlights', icon: '⭐' },
@@ -230,7 +265,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
         const fields = {
             sdc_image_url: val('sdc_image_url'), sdc_image_caption: val('sdc_image_caption'),
-            sdc_ykw: chk('sdc_ykw'), sdc_sport: chk('sdc_sport'), sdc_shower: chk('sdc_shower'),
+            sdc_ykw: chk('sdc_ykw'), sdc_sport: chk('sdc_sport'), sdc_shower: chk('sdc_shower'), sdc_reading: chk('sdc_reading'),
             sdc_weight: val('sdc_weight')
         };
         ['sdc_daily_text','sdc_highlights','sdc_talking_head','sdc_podcasts','sdc_lessons','sdc_posts_entries'].forEach(id => {
@@ -263,7 +298,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         setVal('sdc_image_url', f.sdc_image_url);
         setVal('sdc_image_caption', f.sdc_image_caption);
         setVal('sdc_weight', f.sdc_weight);
-        setChk('sdc_ykw', f.sdc_ykw); setChk('sdc_sport', f.sdc_sport); setChk('sdc_shower', f.sdc_shower);
+        setChk('sdc_ykw', f.sdc_ykw); setChk('sdc_sport', f.sdc_sport); setChk('sdc_shower', f.sdc_shower); setChk('sdc_reading', f.sdc_reading);
+        updateReadingStreak();
 
         const textIds = ['sdc_daily_text','sdc_highlights','sdc_talking_head','sdc_podcasts','sdc_lessons','sdc_posts_entries'];
         textIds.forEach(id => setVal(id, f[id]));
@@ -771,6 +807,10 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                         habitHtml += (d.sport == 1 ? '✅ SPORT ' : '⬜ SPORT ');
                         habitHtml += '<span style=\"margin-left:15px;\"></span>';
                         habitHtml += (d.shower == 1 ? '✅ SHOWER' : '⬜ SHOWER');
+                        habitHtml += '<span style=\"margin-left:15px;\"></span>';
+                        habitHtml += (d.reading == 1 ? '✅ READING' : '⬜ READING');
+                        const viewStreak = readingStreakAt(dateStr, d.reading == 1);
+                        if (viewStreak >= 2) habitHtml += ' <span class=\"sdc-streak\">🔥 ' + viewStreak + ' days</span>';
                         document.getElementById('view_habits').innerHTML = habitHtml;
 
                         document.getElementById('sdc_image_url').value = d.image_url || '';
@@ -781,6 +821,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                         document.getElementById('sdc_ykw').checked = (d.ykw == 1);
                         document.getElementById('sdc_sport').checked = (d.sport == 1);
                         document.getElementById('sdc_shower').checked = (d.shower == 1);
+                        document.getElementById('sdc_reading').checked = (d.reading == 1);
 
                         const textFields = ['highlights','daily_text','talking_head','podcasts','lessons','posts_entries'];
                         textFields.forEach(f => {
@@ -796,6 +837,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                         document.getElementById('view_weight_container').textContent = '';
                         showEdit();
                     }
+
+                    updateReadingStreak();
 
                     // E. Manage Holidays List
                     holidayList.innerHTML = '';
