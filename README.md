@@ -12,28 +12,24 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
 - .github/workflows/deploy.yml – automatic upload to the website (not uploaded itself)
 
 ## Automatic deploy (since 6.1)
-Every merge into `main` uploads the changed files to the website by FTP
-(`.github/workflows/deploy.yml`). No manual copying. You can also start it by hand:
-GitHub → **Actions** → **Deploy to WordPress** → **Run workflow** (tick *Test run* to only
-see what would change).
+Same deploy as the TBT plugins (copied from drag-and-drop). A push or merge to `main` runs
+`.github/workflows/deploy.yml`, which uploads changed files over FTPS to
+`/simple-daily-calendar/`. Markdown files and `.github/` are not uploaded, and a
+documentation-only push skips the deploy.
 
-One-time setup – GitHub → **Settings** → **Secrets and variables** → **Actions** →
-**New repository secret**, four times:
+Before uploading it checks that the three secrets exist (`FTP_SERVER`, `FTP_USERNAME`,
+`FTP_PASSWORD`), that `/simple-daily-calendar/` on the server already contains
+`simple-daily-calendar.php`, and that every PHP file has valid syntax. If an upload is cut
+off, it waits 60 s and retries once.
 
-| Secret | Example |
-|---|---|
-| `FTP_SERVER` | `ftp.mariuszmirecki.pl` |
-| `FTP_USERNAME` | your FTP login |
-| `FTP_PASSWORD` | your FTP password |
-| `FTP_PLUGIN_DIR` | `/public_html/wp-content/plugins/simple-daily-calendar/` – the plugin's **existing** folder as you see it after FTP login, ending with `/` |
+By hand: GitHub → **Actions** → **Deploy to WordPress** → **Run workflow** (*Preview only*
+lists what would change; *protocol*, *port* and *log level* are there for troubleshooting).
 
-Optional (**Variables** tab): `FTP_PROTOCOL` = `ftp` if your host has no FTPS (default `ftps`),
-`FTP_PORT` if it isn't 21.
+The action uploads but never deletes, so two names are fixed:
+- **`simple-daily-calendar.php`** must keep its name, or WordPress would show two plugins.
+- **`/simple-daily-calendar/`** must stay the server folder, for the same reason.
 
-The deploy refuses to run if a secret is missing, if `FTP_PLUGIN_DIR` isn't a folder inside
-`wp-content/plugins/`, or if a PHP file has a syntax error. It only uploads files that changed
-and never deletes anything it didn't upload itself. Database changes (like the new reading
-column) are applied automatically on the next page load.
+Database changes (like the new reading column) are applied automatically on the next page load.
 
 ## Habits
 🤫 YKW · 🚴 Sport · 🚿 Shower · 👓 Reading (6.1). Reading shows a streak counter next to the
