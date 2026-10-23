@@ -9,6 +9,9 @@
  *   and offered back after the PIN is entered again.
  * - Survives the plugin's own page reloads (after Save etc.) for the same tab,
  *   as long as the idle limit has not passed.
+ * - v6.2: while the page is awake it never locks without the countdown having
+ *   been on screen for at least 10 s; the countdown sits above the phone
+ *   keyboard; typing of every kind (incl. dictation / IME) counts as activity.
  */
 (function ($) {
     'use strict';
@@ -19,6 +22,8 @@
     var WARN_MS  = 10 * 1000;   // countdown for the last 10 s (normal)
     var WARN_WRITE_MS = 30 * 1000; // countdown for the last 30 s (writing)
     var PING_MS  = 20 * 1000;   // heartbeat while the calendar is open
+    var MIN_WARN_MS = 10 * 1000; // the countdown is always visible at least this long before locking
+    var ASLEEP_MS = 5 * 1000;   // no timer tick for this long = page was asleep / frozen
     var KEY_TOK  = 'sdc_tok_' + (V.user_key || '');
     var KEY_ACT  = 'sdc_act_' + (V.user_key || '');
 
@@ -29,6 +34,9 @@
     var lastActivity = 0;
     var lastSaved = 0;
     var lastPing = 0;
+    var lastTick = 0;       // when the 1-second timer last ran
+    var warnSince = 0;      // when the countdown appeared (0 = not shown)
+    var wasWriting = false;
     var ticker = null;
     var eventsJsonCache = null;
     var callbacks = [];
@@ -128,29 +136,59 @@
     function onActivity() {
         if (!unlocked) return;
         var now = Date.now();
-        // Coming back after the limit (e.g. laptop woke up) must lock, not extend.
-        if (now - lastActivity >= currentLimit()) { lockNow(); return; }
+        // If the 1-second timer has not run for a while, the page was asleep
+        // (laptop lid closed, phone screen off). Let the timer decide first, so
+        // coming back after the limit locks instead of extending. While the page
+        // is awake, activity never locks – it only keeps it open.
+        if (now - lastTick > ASLEEP_MS) {
+            tick();
+            if (!unlocked) return;
+        }
         lastActivity = now;
+        if (warnSince) { warnSince = 0; hideWarning(); }
         if (now - lastSaved > 1000) { store(KEY_ACT, String(now)); lastSaved = now; }
     }
 
-    ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll', 'input'].forEach(function (ev) {
+    // Everything that means "someone is here". beforeinput / composition cover
+    // phone keyboards, dictation and Polish characters typed via IME, which do
+    // not always produce keydown/input events in the rich-text editor.
+    ['mousemove', 'mousedown', 'pointerdown', 'keydown', 'keyup', 'wheel', 'touchstart', 'touchmove',
+     'scroll', 'input', 'beforeinput', 'compositionstart', 'compositionupdate', 'compositionend', 'paste'
+    ].forEach(function (ev) {
         window.addEventListener(ev, onActivity, { capture: true, passive: true });
     });
 
     function tick() {
         if (!unlocked) return;
         var now = Date.now();
-        var idle = now - lastActivity;
+        var asleep = lastTick && now - lastTick > ASLEEP_MS;
+        lastTick = now;
+
         var writing = isWriting();
+        // Writing just stopped (entry saved/closed, Sol answered…) while you were
+        // within the writing limit: start a fresh normal minute instead of
+        // locking on the spot because more than 60 s passed since the last key.
+        if (wasWriting && !writing && !asleep && now - lastActivity < WRITE_MS) {
+            lastActivity = now;
+        }
+        wasWriting = writing;
+
+        var idle = now - lastActivity;
         var limit = writing ? WRITE_MS : IDLE_MS;
         var warn = writing ? WARN_WRITE_MS : WARN_MS;
 
-        if (idle >= limit) { lockNow(); return; }
+        if (idle >= limit) {
+            // Asleep/frozen page: lock at once. Awake page: only after the
+            // countdown has really been on screen for MIN_WARN_MS.
+            if (asleep || (warnSince && now - warnSince >= MIN_WARN_MS)) { lockNow(); return; }
+        }
 
         if (idle >= limit - warn) {
-            showWarning(Math.ceil((limit - idle) / 1000), writing);
+            if (!warnSince) warnSince = now;
+            var left = Math.max(limit - idle, warnSince + MIN_WARN_MS - now);
+            showWarning(Math.max(1, Math.ceil(left / 1000)), writing);
         } else {
+            warnSince = 0;
             hideWarning();
         }
 
@@ -177,11 +215,30 @@
         var n = document.getElementById('sdc-idle-note');
         if (c) c.textContent = sec;
         if (n) n.style.display = writing ? 'inline' : 'none';
-        if (w) w.style.display = 'block';
+        if (w) { w.style.display = 'block'; placeWarning(w); }
     }
     function hideWarning() {
         var w = document.getElementById('sdc-idle-warning');
         if (w && w.style.display !== 'none') w.style.display = 'none';
+    }
+    // Keep the countdown inside the part of the screen you can actually see:
+    // on a phone the on-screen keyboard covers the bottom of the page, and a
+    // plain "bottom: 24px" box ends up hidden behind it while you type.
+    function placeWarning(w) {
+        var vv = window.visualViewport;
+        if (!w || !vv) return;
+        var h = w.offsetHeight || 60;
+        w.style.bottom = 'auto';
+        w.style.top = Math.max(8, Math.round(vv.offsetTop + vv.height - h - 16)) + 'px';
+        w.style.left = Math.round(vv.offsetLeft + vv.width / 2) + 'px';
+    }
+    if (window.visualViewport) {
+        ['resize', 'scroll'].forEach(function (ev) {
+            window.visualViewport.addEventListener(ev, function () {
+                var w = document.getElementById('sdc-idle-warning');
+                if (w && w.style.display !== 'none') placeWarning(w);
+            });
+        });
     }
 
     // ---------- unlocked ----------
@@ -190,6 +247,9 @@
         locking = false;
         lastActivity = activityAt || Date.now();
         lastPing = Date.now();
+        lastTick = Date.now();
+        warnSince = 0;
+        wasWriting = false;
         store(KEY_TOK, token);
         store(KEY_ACT, String(lastActivity));
 
@@ -316,6 +376,9 @@
         // sdc-script.js / sdc-sol.js tell the lock whether you are writing and how to grab unsaved text.
         registerEditor: function (api) { editorApi = api; },
         registerChat: function (api) { chatApi = api; },
+        // Called by the editor when its text changes – a sure sign of typing,
+        // whatever keyboard or dictation produced it.
+        activity: function () { onActivity(); },
         lockNow: lockNow
     };
 

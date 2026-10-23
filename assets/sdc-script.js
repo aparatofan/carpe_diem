@@ -400,7 +400,10 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                     .then(editor => {
                         editors[el.id] = editor;
                         // Typing in the editor counts as unsaved writing.
-                        editor.model.document.on('change:data', markDirty);
+                        editor.model.document.on('change:data', () => {
+                            markDirty();
+                            if (window.sdcLock.activity) window.sdcLock.activity();
+                        });
                     })
                     .catch(error => { console.error(error); }));
             }
