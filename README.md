@@ -45,6 +45,11 @@ export and Sol's statistics (`reading_streak`).
   (a countdown appears for the last 10 s). The **🔒 Lock** button locks immediately.
 - **Writing mode (5.6):** while you are writing an entry (you have typed something not yet
   saved, or the cursor is in a text field) the limit is 5 minutes instead, with a 30 s countdown.
+- **No silent locks (6.2):** while the page is awake it never locks unless the countdown has
+  been on screen for at least 10 s. Text arriving without key presses (phone keyboard,
+  dictation, autocorrect) counts as typing. The countdown stays above a phone's on-screen
+  keyboard. When writing mode ends, you get a fresh normal minute instead of an instant lock.
+  A page that was asleep (laptop lid, screen off) past the limit still locks at once.
 - If it locks while you have unsaved text, the text is kept on the server as a draft and
   reopened after you enter the PIN again (yellow "Restored" banner). Save it or discard it.
 - Reloads made by the calendar itself (e.g. after *Save*) don't ask for the PIN again
