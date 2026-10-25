@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.2
+ * Version: 6.3
  * Author: AI Assistant
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.2';
+	const VERSION = '6.3';
 	// Bump when the database tables change; existing sites are upgraded automatically.
 	const DB_VERSION = '6.1';
 	const OPT_DB_VERSION = 'sdc_db_version';
@@ -42,6 +42,9 @@ class SimpleDailyCalendar {
 	const META_RESET     = '_sdc_pin_reset';
 	const META_DRAFT     = '_sdc_draft';
 
+	// The one user who may open the calendar. Not a role: other administrators are refused too.
+	const OPTION_OWNER   = 'sdc_owner_id';
+
 	private $table_content;
 	private $table_holidays;
 	private $table_events;
@@ -59,6 +62,8 @@ class SimpleDailyCalendar {
 		$this->table_series   = $wpdb->prefix . 'daily_calendar_series';
 
 		register_activation_hook( __FILE__, array( $this, 'create_tables' ) );
+		// Only the current owner may change who the owner is (blocks edits via wp-admin/options.php).
+		add_filter( 'pre_update_option_' . self::OPTION_OWNER, array( $this, 'guard_owner_option' ), 10, 2 );
 		add_shortcode( 'daily_calendar', array( $this, 'render_shortcode' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_assets' ) );
 		add_action( 'template_redirect', array( $this, 'maybe_no_cache' ) );
@@ -96,8 +101,50 @@ class SimpleDailyCalendar {
 	// --- PIN LOCK: helpers ---
 	// =========================================================
 
+	/**
+	 * The owner's user ID.
+	 *
+	 * 1. SDC_OWNER_ID in wp-config.php, if defined (cannot be changed from wp-admin).
+	 * 2. The saved sdc_owner_id option.
+	 * 3. First run after this update: the only user who already has a PIN, otherwise
+	 *    the administrator whose e-mail is the site's admin e-mail. Saved once.
+	 */
+	private function owner_id() {
+		if ( defined( 'SDC_OWNER_ID' ) ) {
+			return (int) SDC_OWNER_ID;
+		}
+		$owner = (int) get_option( self::OPTION_OWNER, 0 );
+		if ( $owner && get_userdata( $owner ) ) {
+			return $owner;
+		}
+		$with_pin = get_users( array( 'meta_key' => self::META_PIN, 'fields' => 'ID', 'number' => 2 ) );
+		if ( 1 === count( $with_pin ) ) {
+			$owner = (int) $with_pin[0];
+		} else {
+			$admin = get_user_by( 'email', get_option( 'admin_email' ) );
+			$owner = ( $admin && user_can( $admin, 'manage_options' ) ) ? (int) $admin->ID : 0;
+		}
+		if ( $owner ) {
+			update_option( self::OPTION_OWNER, $owner, false );
+		}
+		return $owner;
+	}
+
+	public function guard_owner_option( $new, $old ) {
+		$old = (int) $old;
+		if ( $old && $old !== get_current_user_id() ) {
+			return $old;
+		}
+		return $new;
+	}
+
+	/** Only the owner — no matter what role anyone else has. */
 	private function can_use_calendar() {
-		return is_user_logged_in() && current_user_can( 'edit_posts' );
+		if ( ! is_user_logged_in() ) {
+			return false;
+		}
+		$owner = $this->owner_id();
+		return $owner > 0 && get_current_user_id() === $owner;
 	}
 
 	private function lockout_remaining( $uid ) {
@@ -566,7 +613,7 @@ class SimpleDailyCalendar {
 			$vars = array(
 				'ajax_url'      => admin_url( 'admin-ajax.php' ),
 				'nonce'         => wp_create_nonce( 'sdc_nonce' ),
-				'can_edit'      => current_user_can( 'edit_posts' ),
+				'can_edit'      => $this->can_use_calendar(),
 				'has_pin'       => (bool) get_user_meta( get_current_user_id(), self::META_PIN, true ),
 				'idle_seconds'  => self::IDLE_SECONDS,
 				'writing_idle_seconds' => self::WRITING_IDLE_SECONDS,
@@ -800,7 +847,7 @@ class SimpleDailyCalendar {
 
 		<div id="sdc-calendar"></div>
 
-		<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+		<?php if ( $this->can_use_calendar() ) : ?>
 		<div id="sdc-export-container" style="max-width:400px; margin:30px auto; background:#f0f0f1; padding:15px; border-radius:8px; border:1px solid #ddd; text-align:center;">
 			<div style="font-weight:bold; margin-bottom:8px; color:#333;">📊 Export Report</div>
 			<div style="display:flex; gap:5px; justify-content:center;">
@@ -818,7 +865,7 @@ class SimpleDailyCalendar {
             <button type="button" id="sdc-btn-prev-day" class="button sdc-nav-btn">Previous</button>
             <button type="button" id="sdc-btn-next-day" class="button sdc-nav-btn">Next</button>
 
-						<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+						<?php if ( $this->can_use_calendar() ) : ?>
 							<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
 						<?php endif; ?>
 						<button type="button" class="button sdc-close-btn">Close</button>
@@ -827,7 +874,7 @@ class SimpleDailyCalendar {
 				</div>
 				<div id="sdc-loading" style="display:none;">Loading data...</div>
 
-				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+				<?php if ( $this->can_use_calendar() ) : ?>
 				<div class="sdc-tabs">
 					<button class="sdc-tab-btn active" data-tab="content" id="sdc-tab-btn-content">Day Content</button>
 					<button class="sdc-tab-btn" data-tab="holidays" id="sdc-tab-btn-holidays">Holidays</button>
@@ -864,7 +911,7 @@ class SimpleDailyCalendar {
 						<div class="sdc-view-section"><strong>✍️ Posts & Enchiridion:</strong> <div id="view_posts_entries"></div></div>
 					</div>
 
-					<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+					<?php if ( $this->can_use_calendar() ) : ?>
 					<div id="sdc-edit-mode" style="display:none;">
 						<div id="sdc-draft-banner" class="sdc-draft-banner" style="display:none;">
 							<span>↩️ <strong>Restored:</strong> the text you were writing when Kalendarz locked<span id="sdc-draft-when"></span>.
@@ -950,7 +997,7 @@ class SimpleDailyCalendar {
 					<?php endif; ?>
 				</div>
 
-				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+				<?php if ( $this->can_use_calendar() ) : ?>
 				<div id="sdc-tab-events-area" class="sdc-tab-pane" style="display:none;">
 					<h4 id="sdc-active-events-title">Active Events:</h4>
 					<ul id="sdc-event-list" style="margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:15px; padding-left:0; list-style-type:none;"></ul>
@@ -985,7 +1032,7 @@ class SimpleDailyCalendar {
 				</div>
 				<?php endif; ?>
 
-				<?php if ( current_user_can( 'edit_posts' ) ) : ?>
+				<?php if ( $this->can_use_calendar() ) : ?>
 				<div id="sdc-tab-holidays-area" class="sdc-tab-pane" style="display:none;">
 					<h4 id="sdc-active-holidays-title">Active Holidays:</h4>
 					<ul id="sdc-holiday-list" style="margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:15px; padding-left:0; list-style-type:none;"></ul>
