@@ -18,7 +18,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         'weight': '⚖️', 'shower': '🚿', 'sport': '🚴', 'ykw': '🤫', 'reading': '👓',
         'highlights': '⭐', 'daily_text': '📝', 'talking_head': '🗣️',
         'podcasts': '🎧', 'books': '📖', 'films': '🎬', 'series': '📺',
-        'lessons': '🌳', 'posts_entries': '✍️'
+        'lessons': '🌳', 'posts_entries': '✍️',
+        'image': '' // the 🖼️ button is drawn by eventContent, not the title
     };
 
     // --- READING STREAK ---
@@ -63,6 +64,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             if(evt.extendedProps[activeFilter]) {
                 const newEvt = { ...evt };
                 newEvt.title = iconMap[activeFilter];
+                // While one habit is filtered, keep the row to that habit only.
+                if(activeFilter !== 'image') newEvt.extendedProps = { ...evt.extendedProps, hidePic: true };
                 filtered.push(newEvt);
             }
         });
@@ -87,7 +90,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             { id: 'films', label: 'Films', icon: '🎬' },
             { id: 'series', label: 'Series', icon: '📺' },
             { id: 'lessons', label: 'Lessons', icon: '🌳' },
-            { id: 'posts_entries', label: 'Posts', icon: '✍️' }
+            { id: 'posts_entries', label: 'Posts', icon: '✍️' },
+            { id: 'image', label: 'Pictures', icon: '🖼️' }
         ];
 
         filters.forEach(f => {
@@ -163,8 +167,30 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         events: masterEvents,
         eventOrder: '-duration',
         dateClick: function(info) { openModalForDate(info.dateStr, 'standard'); },
+        // Days with a picture get a 🖼️ button at the end of their icon row.
+        eventContent: function(arg) {
+            const p = arg.event.extendedProps || {};
+            if (p.type !== 'content' || !p.image_url || p.hidePic) return true; // default look
+            const wrap = document.createElement('div');
+            wrap.className = 'fc-event-title';
+            if (arg.event.title) wrap.appendChild(document.createTextNode(arg.event.title));
+            const pic = document.createElement('span');
+            pic.className = 'sdc-pic-btn';
+            pic.textContent = '🖼️';
+            pic.title = 'Show picture';
+            pic.setAttribute('role', 'button');
+            wrap.appendChild(pic);
+            return { domNodes: [wrap] };
+        },
         eventClick: function(info) {
             const dateStr = info.event.startStr || info.event.start.toISOString().slice(0,10);
+            // Clicking the 🖼️ shows the picture only; the rest of the row still opens the day.
+            if (info.jsEvent && info.jsEvent.target && info.jsEvent.target.closest('.sdc-pic-btn')) {
+                info.jsEvent.preventDefault();
+                info.jsEvent.stopPropagation();
+                showDayPicture(dateStr, info.event.extendedProps);
+                return;
+            }
             if (info.event.id && info.event.id.startsWith('holiday-')) {
                 openModalForDate(dateStr, 'holiday_view_only');
             } else if (info.event.id && info.event.id.startsWith('event-')) {
@@ -175,6 +201,59 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         }
     });
     calendar.render();
+
+    // --- PICTURE VIEWER (month view 🖼️) ---
+    // Lives inside #sdc-app so the auto-lock removes it together with everything else.
+    let picViewer = null;
+    function buildPicViewer() {
+        const app = document.getElementById('sdc-app') || document.body;
+        const el = document.createElement('div');
+        el.className = 'sdc-pic-viewer';
+        el.setAttribute('role', 'dialog');
+        el.setAttribute('aria-modal', 'true');
+        el.innerHTML =
+            '<div class="sdc-pic-box">' +
+                '<div class="sdc-pic-head">' +
+                    '<span class="sdc-pic-date"></span>' +
+                    '<button type="button" class="sdc-pic-close" aria-label="Close">&times;</button>' +
+                '</div>' +
+                '<div class="sdc-pic-frame"><img alt=""></div>' +
+                '<div class="sdc-pic-caption"></div>' +
+                '<div class="sdc-pic-foot"><button type="button" class="button sdc-pic-open-day">Open day</button></div>' +
+            '</div>';
+        app.appendChild(el);
+        el.addEventListener('click', function(e) { if (e.target === el) hidePicViewer(); });
+        el.querySelector('.sdc-pic-close').addEventListener('click', hidePicViewer);
+        el.querySelector('.sdc-pic-open-day').addEventListener('click', function() {
+            const d = el.dataset.date;
+            hidePicViewer();
+            if (d) openModalForDate(d, 'standard');
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && picViewer && picViewer.classList.contains('is-open')) hidePicViewer();
+        });
+        return el;
+    }
+    function showDayPicture(dateStr, props) {
+        if (!props || !props.image_url) return;
+        if (!picViewer || !picViewer.isConnected) picViewer = buildPicViewer();
+        const nice = new Date(dateStr + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        picViewer.dataset.date = dateStr;
+        picViewer.querySelector('.sdc-pic-date').textContent = nice;
+        const img = picViewer.querySelector('img');
+        img.src = props.image_url;
+        img.alt = props.image_caption || ('Picture for ' + nice);
+        const cap = picViewer.querySelector('.sdc-pic-caption');
+        cap.textContent = props.image_caption || '';
+        cap.style.display = props.image_caption ? 'block' : 'none';
+        picViewer.classList.add('is-open');
+        picViewer.querySelector('.sdc-pic-close').focus();
+    }
+    function hidePicViewer() {
+        if (!picViewer) return;
+        picViewer.classList.remove('is-open');
+        picViewer.querySelector('img').removeAttribute('src');
+    }
 
     // --- MODAL & CKEDITOR LOGIC ---
 
