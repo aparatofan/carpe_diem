@@ -677,3 +677,93 @@ body.sdc-sol-active { overflow: hidden; }
     color: #8a5a00;
     white-space: nowrap;
 }
+
+/* =========================================================
+   Month view picture button + viewer (v6.4)
+   ========================================================= */
+.sdc-pic-btn {
+    display: inline-block;
+    padding: 0 2px;
+    border-radius: 4px;
+    cursor: zoom-in;
+    transition: transform .12s ease, background-color .12s ease;
+}
+.sdc-pic-btn:hover { background: rgba(8, 89, 198, 0.12); transform: scale(1.15); }
+
+.sdc-pic-viewer {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999999;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(17, 24, 39, 0.75);
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.sdc-pic-viewer.is-open { display: flex; }
+.sdc-pic-box {
+    display: flex;
+    flex-direction: column;
+    max-width: min(960px, 100%);
+    max-height: 100%;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+}
+.sdc-pic-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #eee;
+}
+.sdc-pic-date { font-weight: 600; color: #1d2327; }
+.sdc-pic-close {
+    border: 0;
+    background: none;
+    font-size: 28px;
+    line-height: 1;
+    color: #50575e;
+    cursor: pointer;
+    padding: 0 4px;
+}
+.sdc-pic-close:hover { color: #000; }
+.sdc-pic-frame {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f6f7f7;
+}
+.sdc-pic-frame img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 200px);
+    object-fit: contain;
+}
+.sdc-pic-caption {
+    padding: 10px 14px 0;
+    color: #3c434a;
+    white-space: pre-line;
+}
+.sdc-pic-open-day {
+    padding: 6px 14px;
+    border: 1px solid #2c3338;
+    border-radius: 6px;
+    background: #fff;
+    color: #2c3338;
+    font: inherit;
+    font-size: 0.9em;
+    cursor: pointer;
+}
+.sdc-pic-open-day:hover { background: #2c3338; color: #fff; }
+.sdc-pic-foot {
+    display: flex;
+    justify-content: flex-end;
+    padding: 10px 14px 12px;
+}

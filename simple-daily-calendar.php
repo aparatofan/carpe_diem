@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.3
+ * Version: 6.4
  * Author: AI Assistant
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.3';
+	const VERSION = '6.4';
 	// Bump when the database tables change; existing sites are upgraded automatically.
 	const DB_VERSION = '6.1';
 	const OPT_DB_VERSION = 'sdc_db_version';
@@ -682,8 +682,11 @@ class SimpleDailyCalendar {
 			if ( isset( $series_dates[ $row['event_date'] ] ) ) $icons .= '📺 ';
 			if ( ! empty( $row['lessons'] ) )       $icons .= '🌳 ';
 			if ( ! empty( $row['posts_entries'] ) ) $icons .= '✍️ ';
+			// The picture icon itself is drawn by the month view (it opens the image),
+			// so it is not part of the title text.
+			$has_image = ! empty( $row['image_url'] );
 
-			if( ! empty( $icons ) ) {
+			if( ! empty( $icons ) || $has_image ) {
 				$events[] = array(
 					'id'              => 'content-' . $row['id'],
 					'start'           => $row['event_date'],
@@ -708,7 +711,10 @@ class SimpleDailyCalendar {
 						'films' => !empty($row['films']) || isset( $film_dates[ $row['event_date'] ] ),
 						'series' => isset( $series_dates[ $row['event_date'] ] ),
 						'lessons' => !empty($row['lessons']),
-						'posts_entries' => !empty($row['posts_entries'])
+						'posts_entries' => !empty($row['posts_entries']),
+						'image' => $has_image,
+						'image_url' => $has_image ? esc_url_raw( $row['image_url'] ) : '',
+						'image_caption' => $has_image ? (string) $row['image_caption'] : ''
 					)
 				);
 			}
