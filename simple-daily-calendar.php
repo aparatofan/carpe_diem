@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.4
+ * Version: 6.5
  * Author: AI Assistant
  */
 
@@ -12,21 +12,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.4';
+	const VERSION = '6.5';
 	// Bump when the database tables change; existing sites are upgraded automatically.
 	const DB_VERSION = '6.1';
 	const OPT_DB_VERSION = 'sdc_db_version';
 
 	// --- PIN LOCK SETTINGS ---
-	// Browser locks after this many seconds without mouse/keyboard/touch activity.
-	const IDLE_SECONDS = 60;
-	// While you are writing an entry (you have typed something that is not saved yet,
-	// or the cursor is in a text field) the browser waits this long instead.
-	const WRITING_IDLE_SECONDS = 300; // 5 minutes
-	// Server forgets an unlocked session after this many seconds without a request
-	// (the open page sends a heartbeat every ~20s, so this only matters if the tab
-	// was closed or the computer went to sleep).
-	const SERVER_IDLE_SECONDS = 330;
+	// Since 6.5 there is no automatic idle lock: Kalendarz locks when you press
+	// the Lock button or close the tab. As a backstop, the server forgets an unlocked
+	// session after this many seconds without any request. The open page sends a
+	// heartbeat every minute, so this only matters if the computer was asleep.
+	const SERVER_IDLE_SECONDS = 43200; // 12 hours
+	// A session's last-seen time is only rewritten when older than this. Fewer writes
+	// means two overlapping requests can no longer wipe out each other's session.
+	const SESSION_TOUCH_SECONDS = 300;
 	// Unsaved text rescued at lock time is kept this long.
 	const DRAFT_KEEP_SECONDS = 1209600; // 14 days
 	// Wrong PIN attempts allowed before a temporary lockout.
@@ -205,12 +204,11 @@ class SimpleDailyCalendar {
 		if ( ! is_string( $token ) || ! preg_match( '/^[a-f0-9]{64}$/', $token ) ) return false;
 		$sessions = $this->get_sessions( $uid );
 		$hash     = hash( 'sha256', $token );
-		if ( ! isset( $sessions[ $hash ] ) ) {
-			update_user_meta( $uid, self::META_SESSIONS, $sessions ); // prune expired
-			return false;
+		if ( ! isset( $sessions[ $hash ] ) ) return false;
+		if ( time() - (int) $sessions[ $hash ] >= self::SESSION_TOUCH_SECONDS ) {
+			$sessions[ $hash ] = time();
+			update_user_meta( $uid, self::META_SESSIONS, $sessions );
 		}
-		$sessions[ $hash ] = time();
-		update_user_meta( $uid, self::META_SESSIONS, $sessions );
 		return true;
 	}
 
@@ -362,7 +360,7 @@ class SimpleDailyCalendar {
 		$this->send_unlocked( $uid );
 	}
 
-	/** Re-opens the calendar after a page reload (e.g. after saving) within the idle window. */
+	/** Re-opens the calendar after a page reload (e.g. after saving) in the same tab. */
 	public function ajax_resume() {
 		$this->require_unlocked();
 		wp_send_json_success( array( 'events_json' => $this->get_all_events_json() ) );
@@ -615,8 +613,6 @@ class SimpleDailyCalendar {
 				'nonce'         => wp_create_nonce( 'sdc_nonce' ),
 				'can_edit'      => $this->can_use_calendar(),
 				'has_pin'       => (bool) get_user_meta( get_current_user_id(), self::META_PIN, true ),
-				'idle_seconds'  => self::IDLE_SECONDS,
-				'writing_idle_seconds' => self::WRITING_IDLE_SECONDS,
 				'user_key'      => md5( get_current_user_id() . wp_salt( 'nonce' ) ),
 				'sol_configured' => SDC_Sol::api_key() !== '',
 			);
@@ -842,11 +838,6 @@ class SimpleDailyCalendar {
 		<div class="sdc-lock-bar">
 			<button type="button" id="sdc-sol-open" class="sdc-lock-now sdc-sol-open" title="Talk to Sol">💬 Sol</button>
 			<button type="button" id="sdc-lock-now" class="sdc-lock-now" title="Lock now">🔒 Lock</button>
-		</div>
-
-		<div id="sdc-idle-warning" class="sdc-idle-warning" style="display:none;" role="status">
-			Locking in <strong id="sdc-idle-count">10</strong> s – move the mouse or press a key to stay unlocked.
-			<span id="sdc-idle-note" style="display:none;"><br>Don't worry, the text you are writing will be kept.</span>
 		</div>
 
 		<div id="sdc-filter-bar-container"></div>

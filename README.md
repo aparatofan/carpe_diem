@@ -41,25 +41,22 @@ export and Sol's statistics (`reading_streak`).
 - The first time you open the calendar page you are asked to choose a PIN (4–8 digits).
 - After that, the page always opens on a lock screen. Calendar data is **not** in the page
   source; the server only sends it after the correct PIN.
-- Auto-lock after 60 s with no mouse, keyboard, scroll or touch activity
-  (a countdown appears for the last 10 s). The **🔒 Lock** button locks immediately.
-- **Writing mode (5.6):** while you are writing an entry (you have typed something not yet
-  saved, or the cursor is in a text field) the limit is 5 minutes instead, with a 30 s countdown.
-- **No silent locks (6.2):** while the page is awake it never locks unless the countdown has
-  been on screen for at least 10 s. Text arriving without key presses (phone keyboard,
-  dictation, autocorrect) counts as typing. The countdown stays above a phone's on-screen
-  keyboard. When writing mode ends, you get a fresh normal minute instead of an instant lock.
-  A page that was asleep (laptop lid, screen off) past the limit still locks at once.
+- **No automatic idle lock (6.5).** The timer was removed: it kept locking mid-writing.
+  Kalendarz now locks only when you press **🔒 Lock** (top bar, day window or Sol) or close
+  the tab. Lock it yourself when you finish.
+- Backstop: the server forgets an unlocked session after 12 hours without any request
+  (the open page sends a heartbeat every minute, so this only happens after the computer
+  slept or the tab was frozen that long).
 - If it locks while you have unsaved text, the text is kept on the server as a draft and
   reopened after you enter the PIN again (yellow "Restored" banner). Save it or discard it.
-- Reloads made by the calendar itself (e.g. after *Save*) don't ask for the PIN again
-  as long as the minute hasn't passed. Closing the tab always forgets the session.
+- Reloads made by the calendar itself (e.g. after *Save*) don't ask for the PIN again.
+  Closing the tab always forgets the session.
 - 5 wrong attempts → 15-minute lockout.
 - **Forgot PIN?** e-mails a one-time link (valid 30 min) to your WordPress account address.
   If e-mail doesn't work on the site, delete the user meta `_sdc_pin_hash` for your user
   (e.g. in phpMyAdmin, table `wp_usermeta`) and you'll be asked to set a new PIN.
 - Timings are constants at the top of the `SimpleDailyCalendar` class
-  (`IDLE_SECONDS`, `WRITING_IDLE_SECONDS`, `MAX_PIN_ATTEMPTS`, `PIN_LOCKOUT_SECONDS`, …).
+  (`SERVER_IDLE_SECONDS`, `MAX_PIN_ATTEMPTS`, `PIN_LOCKOUT_SECONDS`, …).
 
 ## Sol – coach / mentor chat (since 6.0)
 - **💬 Sol** button next to 🔒 Lock. Works only while Kalendarz is unlocked; locking closes it.
