@@ -81,7 +81,7 @@
     margin: 150px auto; 
     padding: 0; 
     border: 1px solid #888; 
-    width: 90%; max-width: 1080px; 
+    width: 1080px; max-width: calc(100vw - 32px); 
     border-radius: 8px; 
     box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
     max-height: calc(100vh - 180px); 
@@ -105,8 +105,24 @@
 .sdc-modal-actions{
     display:flex;
     align-items:center;
+    justify-content:flex-end;
+    flex-wrap:wrap;
     gap:10px;
 }
+
+/* Six buttons share the top bar while editing: slightly tighter side padding so they stay on one line */
+.sdc-modal-topbar .sdc-modal-actions .button{
+    padding:10px 15px !important;
+    white-space:nowrap;
+}
+
+/* Cancel sits in the blue top bar next to Save: outlined, like Close */
+.sdc-modal-topbar .sdc-modal-actions .button.sdc-cancel-top-btn{
+    background:transparent !important;
+    color:#fff !important;
+    border:1px solid rgba(255,255,255,0.6) !important;
+}
+.sdc-modal-topbar .sdc-modal-actions .button.sdc-cancel-top-btn:hover{ border-color:#fff !important; }
 
 .sdc-modal-actions .button.button-primary{
     background:#fff !important;
