@@ -46,10 +46,9 @@ A day can hold many photos instead of one picture.
   cover (the first one); × removes it from the day (the file stays in the media library).
   Each photo has its own caption, and the album can have a title.
 - **Day view:** a magazine-style collage – the cover large, the rest in a loose grid,
-  the date in the top-right corner, the album title (or the month) in big translucent
-  yellow letters across the photos. The layout is fixed per day, so it looks the same
-  every time. Black-and-white by default (colour on hover); the switch under the collage
-  is remembered in that browser.
+  the date in the top-right corner. Above it: the album title, the number of photos and
+  the colour switch. The layout is fixed per day, so it looks the same every time.
+  Black-and-white by default (colour on hover); the switch is remembered in that browser.
 - **Viewer:** click any photo – full screen, arrows / ← → keys / swipe, captions,
   thumbnail strip, Esc or swipe down to close.
 - **Month view:** a small round cover thumbnail with the number of photos; click it to

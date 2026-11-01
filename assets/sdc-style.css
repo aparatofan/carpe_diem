@@ -808,26 +808,6 @@ body.sdc-sol-active { overflow: hidden; }
     margin-top: clamp(8px, 1.6vw, 18px);
 }
 
-/* Big translucent lettering over the photos */
-.sdc-collage-letters {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    pointer-events: none;
-    overflow: hidden;
-}
-.sdc-letter-word {
-    position: absolute;
-    white-space: nowrap;
-    font-family: var(--sdc-display);
-    font-weight: 500;
-    line-height: .95;
-    letter-spacing: .01em;
-    color: var(--sdc-accent);
-    opacity: .82;
-    mix-blend-mode: multiply;
-}
-
 /* Decorations */
 .sdc-collage-deco { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 .sdc-deco-ring {
@@ -848,37 +828,48 @@ body.sdc-sol-active { overflow: hidden; }
 }
 .sdc-deco-chev:last-child { transform: translateX(60%); }
 
-/* Footer */
-.sdc-collage-foot {
+/* Header above the photos: title, count, black-and-white switch */
+.sdc-collage-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 12px;
-    margin-top: clamp(14px, 2.4vw, 26px);
-    padding-top: 10px;
-    border-top: 1px solid rgba(27,27,26,.18);
+    gap: 16px;
+    margin-bottom: clamp(16px, 2.6vw, 28px);
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(27,27,26,.2);
 }
-.sdc-collage-label { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; min-width: 0; }
-.sdc-collage-title { font: italic 400 1.15rem/1.3 var(--sdc-serif); color: var(--sdc-ink); }
+.sdc-collage-label { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; min-width: 0; }
+.sdc-collage .sdc-collage-title {
+    margin: 0;
+    padding: 0;
+    font: italic 400 clamp(1.35rem, 2.8vw, 2rem)/1.2 var(--sdc-serif);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--sdc-ink);
+}
 .sdc-collage-count {
-    font: 400 12px/1 var(--sdc-display);
-    letter-spacing: .14em;
+    font: 400 14px/1 var(--sdc-display);
+    letter-spacing: .16em;
     text-transform: uppercase;
     color: var(--sdc-ink-soft);
+    white-space: nowrap;
 }
 .sdc-collage-mono {
     all: unset;
     cursor: pointer;
-    font: 400 12px/1 var(--sdc-display);
-    letter-spacing: .12em;
+    font: 400 14px/1 var(--sdc-display);
+    letter-spacing: .14em;
     text-transform: uppercase;
     color: var(--sdc-ink-soft);
     padding: 6px 0;
-    border-bottom: 1px solid transparent;
+    border-bottom: 1.5px solid transparent;
     white-space: nowrap;
 }
 .sdc-collage-mono:hover,
 .sdc-collage-mono:focus-visible { color: var(--sdc-ink); border-bottom-color: var(--sdc-accent); }
+@media (max-width: 560px) {
+    .sdc-collage-head { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
 
 /* --- Full-screen viewer --- */
 html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }

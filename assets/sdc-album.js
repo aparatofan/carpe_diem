@@ -176,22 +176,12 @@
         deco.appendChild(chevL); deco.appendChild(chevR);
         stage.appendChild(deco);
 
-        // Big translucent lettering: the album title, or the month if there is none.
-        const words = String(opts.title || date.month).toUpperCase().split(/\s+/).filter(Boolean).slice(0, 6);
-        const letters = el('div', 'sdc-collage-letters');
-        letters.setAttribute('aria-hidden', 'true');
-        const wordEls = words.map(w => { const s = el('span', 'sdc-letter-word', w); letters.appendChild(s); return s; });
-        const indents = words.map((w, i) => i === 0 ? rnd() * 0.06 : rnd() * 0.42);
-        stage.appendChild(letters);
-
-        root.appendChild(stage);
-
-        // Footer: title, count, B&W switch.
-        const foot = el('div', 'sdc-collage-foot');
+        // Header above the photos: title, count, B&W switch.
+        const head = el('div', 'sdc-collage-head');
         const label = el('div', 'sdc-collage-label');
-        if (opts.title) label.appendChild(el('span', 'sdc-collage-title', opts.title));
+        if (opts.title) label.appendChild(el('h4', 'sdc-collage-title', opts.title));
         label.appendChild(el('span', 'sdc-collage-count', photos.length + (photos.length === 1 ? ' photo' : ' photos')));
-        foot.appendChild(label);
+        head.appendChild(label);
         const monoBtn = el('button', 'sdc-collage-mono');
         monoBtn.type = 'button';
         const setMonoLabel = () => {
@@ -205,8 +195,9 @@
             setMonoLabel();
         });
         setMonoLabel();
-        foot.appendChild(monoBtn);
-        root.appendChild(foot);
+        head.appendChild(monoBtn);
+        root.appendChild(head);
+        root.appendChild(stage);
 
         container.appendChild(root);
 
@@ -246,18 +237,6 @@
                 t.fig.style.gridColumn = 'span ' + Math.min(cols, size[0]);
                 t.fig.style.gridRow = 'span ' + size[1];
             });
-
-            // Lettering: one word per line, spread down the collage.
-            const h = stage.clientHeight;
-            const longest = Math.max.apply(null, words.map(w => w.length)) || 1;
-            const fs = Math.max(36, Math.min(width * 0.16, (width * 0.9) / (longest * 0.52), h / (words.length * 0.95)));
-            wordEls.forEach((s, i) => {
-                s.style.fontSize = fs + 'px';
-                const top = words.length === 1 ? (h - fs) * 0.42 : (i * (h - fs)) / (words.length - 1);
-                s.style.top = Math.max(0, top) + 'px';
-                const maxLeft = Math.max(0, width - s.offsetWidth);
-                s.style.left = Math.min(maxLeft, indents[i] * width) + 'px';
-            });
         }
         layout();
         if (window.ResizeObserver) {
@@ -266,8 +245,6 @@
         } else {
             window.addEventListener('resize', scheduleLayout);
         }
-        // Webfont arrival changes word widths.
-        if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleLayout);
     }
 
     // =====================================================================
