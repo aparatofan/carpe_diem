@@ -6,6 +6,7 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
 - simple-daily-calendar.php – main PHP file
 - includes/sdc-sol.php – Sol (OpenAI chat): conversation loop, read-only data tools, chat storage
 - assets/sdc-script.js – calendar JavaScript
+- assets/sdc-album.js – photo albums: collage, full-screen viewer, photo manager (6.6)
 - assets/sdc-lock.js – PIN lock screen + auto-lock
 - assets/sdc-sol.js – Sol chat panel
 - assets/sdc-style.css – CSS
@@ -36,6 +37,26 @@ Database changes (like the new reading column) are applied automatically on the 
 🤫 YKW · 🚴 Sport · 🚿 Shower · 👓 Reading (6.1). Reading shows a streak counter next to the
 box (“Keep your 4-day streak going”) and in the day view; it's in the filter bar, the CSV
 export and Sol's statistics (`reading_streak`).
+
+## Photo albums (since 6.6)
+A day can hold many photos instead of one picture.
+
+- **Adding:** in *Edit*, the 📷 Photos box. *+ Add photos* opens the media library with
+  multi-select (Ctrl/Cmd-click or drag-select). Drag tiles to reorder; ★ makes a photo the
+  cover (the first one); × removes it from the day (the file stays in the media library).
+  Each photo has its own caption, and the album can have a title.
+- **Day view:** a magazine-style collage – the cover large, the rest in a loose grid,
+  the date in the top-right corner. Above it: the album title, the number of photos and
+  the colour switch. The layout is fixed per day, so it looks the same every time.
+  Black-and-white by default (colour on hover); the switch is remembered in that browser.
+- **Viewer:** click any photo – full screen, arrows / ← → keys / swipe, captions,
+  thumbnail strip, Esc or swipe down to close.
+- **Month view:** a small round cover thumbnail with the number of photos; click it to
+  open the viewer.
+- **Storage:** JSON in the new `photos` column (plus `album_title`). `image_url` keeps the
+  cover and `image_caption` all captions, so Sol reads and searches captions and album
+  titles. Old single pictures show as one-photo albums – nothing to migrate.
+- Photos are ordinary media-library files, i.e. reachable by their address.
 
 ## PIN lock (since 5.5)
 - The first time you open the calendar page you are asked to choose a PIN (4–8 digits).
