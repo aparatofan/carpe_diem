@@ -167,24 +167,35 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         events: masterEvents,
         eventOrder: '-duration',
         dateClick: function(info) { openModalForDate(info.dateStr, 'standard'); },
-        // Days with a picture get a 🖼️ button at the end of their icon row.
+        // Days with photos get a small round cover thumbnail (and a count) at the end of their icon row.
         eventContent: function(arg) {
             const p = arg.event.extendedProps || {};
-            if (p.type !== 'content' || !p.image_url || p.hidePic) return true; // default look
+            const photos = p.photos || [];
+            if (p.type !== 'content' || !photos.length || p.hidePic) return true; // default look
             const wrap = document.createElement('div');
             wrap.className = 'fc-event-title';
             if (arg.event.title) wrap.appendChild(document.createTextNode(arg.event.title));
             const pic = document.createElement('span');
             pic.className = 'sdc-pic-btn';
-            pic.textContent = '🖼️';
-            pic.title = 'Show picture';
+            pic.title = (p.album_title ? p.album_title + ' – ' : '') + photos.length + (photos.length === 1 ? ' photo' : ' photos');
             pic.setAttribute('role', 'button');
+            const img = document.createElement('img');
+            img.src = photos[0].thumb || photos[0].large || photos[0].url;
+            img.alt = '';
+            img.loading = 'lazy';
+            pic.appendChild(img);
+            if (photos.length > 1) {
+                const n = document.createElement('span');
+                n.className = 'sdc-pic-count';
+                n.textContent = photos.length;
+                pic.appendChild(n);
+            }
             wrap.appendChild(pic);
             return { domNodes: [wrap] };
         },
         eventClick: function(info) {
             const dateStr = info.event.startStr || info.event.start.toISOString().slice(0,10);
-            // Clicking the 🖼️ shows the picture only; the rest of the row still opens the day.
+            // Clicking the cover thumbnail opens the photos; the rest of the row still opens the day.
             if (info.jsEvent && info.jsEvent.target && info.jsEvent.target.closest('.sdc-pic-btn')) {
                 info.jsEvent.preventDefault();
                 info.jsEvent.stopPropagation();
@@ -202,57 +213,12 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     });
     calendar.render();
 
-    // --- PICTURE VIEWER (month view 🖼️) ---
-    // Lives inside #sdc-app so the auto-lock removes it together with everything else.
-    let picViewer = null;
-    function buildPicViewer() {
-        const app = document.getElementById('sdc-app') || document.body;
-        const el = document.createElement('div');
-        el.className = 'sdc-pic-viewer';
-        el.setAttribute('role', 'dialog');
-        el.setAttribute('aria-modal', 'true');
-        el.innerHTML =
-            '<div class="sdc-pic-box">' +
-                '<div class="sdc-pic-head">' +
-                    '<span class="sdc-pic-date"></span>' +
-                    '<button type="button" class="sdc-pic-close" aria-label="Close">&times;</button>' +
-                '</div>' +
-                '<div class="sdc-pic-frame"><img alt=""></div>' +
-                '<div class="sdc-pic-caption"></div>' +
-                '<div class="sdc-pic-foot"><button type="button" class="button sdc-pic-open-day">Open day</button></div>' +
-            '</div>';
-        app.appendChild(el);
-        el.addEventListener('click', function(e) { if (e.target === el) hidePicViewer(); });
-        el.querySelector('.sdc-pic-close').addEventListener('click', hidePicViewer);
-        el.querySelector('.sdc-pic-open-day').addEventListener('click', function() {
-            const d = el.dataset.date;
-            hidePicViewer();
-            if (d) openModalForDate(d, 'standard');
-        });
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && picViewer && picViewer.classList.contains('is-open')) hidePicViewer();
-        });
-        return el;
-    }
+    // --- PHOTO VIEWER (month view cover thumbnail) ---
+    // The viewer lives inside #sdc-app, so the lock removes it together with everything else.
     function showDayPicture(dateStr, props) {
-        if (!props || !props.image_url) return;
-        if (!picViewer || !picViewer.isConnected) picViewer = buildPicViewer();
-        const nice = new Date(dateStr + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-        picViewer.dataset.date = dateStr;
-        picViewer.querySelector('.sdc-pic-date').textContent = nice;
-        const img = picViewer.querySelector('img');
-        img.src = props.image_url;
-        img.alt = props.image_caption || ('Picture for ' + nice);
-        const cap = picViewer.querySelector('.sdc-pic-caption');
-        cap.textContent = props.image_caption || '';
-        cap.style.display = props.image_caption ? 'block' : 'none';
-        picViewer.classList.add('is-open');
-        picViewer.querySelector('.sdc-pic-close').focus();
-    }
-    function hidePicViewer() {
-        if (!picViewer) return;
-        picViewer.classList.remove('is-open');
-        picViewer.querySelector('img').removeAttribute('src');
+        const photos = (props && props.photos) || [];
+        if (!photos.length || !window.sdcAlbum) return;
+        window.sdcAlbum.openViewer(photos, 0, { date: dateStr, onOpenDay: d => openModalForDate(d, 'standard') });
     }
 
     // --- MODAL & CKEDITOR LOGIC ---
@@ -343,7 +309,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
         const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
         const fields = {
-            sdc_image_url: val('sdc_image_url'), sdc_image_caption: val('sdc_image_caption'),
+            sdc_photos: photoEditor ? photoEditor.get() : [], sdc_album_title: val('sdc_album_title'),
             sdc_ykw: chk('sdc_ykw'), sdc_sport: chk('sdc_sport'), sdc_shower: chk('sdc_shower'), sdc_reading: chk('sdc_reading'),
             sdc_weight: val('sdc_weight')
         };
@@ -374,8 +340,11 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v === null || v === undefined) ? '' : v; };
         const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
 
-        setVal('sdc_image_url', f.sdc_image_url);
-        setVal('sdc_image_caption', f.sdc_image_caption);
+        // Drafts saved before 6.6 carry a single picture instead of a photo list.
+        let draftPhotos = Array.isArray(f.sdc_photos) ? f.sdc_photos : [];
+        if (!draftPhotos.length && f.sdc_image_url) draftPhotos = [{ url: f.sdc_image_url, caption: f.sdc_image_caption || '' }];
+        if (photoEditor) photoEditor.set(draftPhotos);
+        setVal('sdc_album_title', f.sdc_album_title);
         setVal('sdc_weight', f.sdc_weight);
         setChk('sdc_ykw', f.sdc_ykw); setChk('sdc_sport', f.sdc_sport); setChk('sdc_shower', f.sdc_shower); setChk('sdc_reading', f.sdc_reading);
         updateReadingStreak();
@@ -505,6 +474,14 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         }
     }
 
+    // --- PHOTO ALBUM EDITOR ---
+    const photoGridEl = document.getElementById('sdc-photo-grid');
+    const photoHiddenEl = document.getElementById('sdc_photos');
+    const photoEditor = (photoGridEl && photoHiddenEl && window.sdcAlbum)
+        ? window.sdcAlbum.createEditor(photoGridEl, photoHiddenEl, markDirty)
+        : null;
+    if (photoEditor) photoEditor.set([]);
+
     // --- UPLOADERS ---
     var dailyUploader;
     const uploadBtn = document.getElementById('sdc-upload-btn');
@@ -512,11 +489,17 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         uploadBtn.addEventListener('click', function(e) {
             e.preventDefault();
             if (dailyUploader) { dailyUploader.open(); return; }
-            dailyUploader = wp.media.frames.file_frame = wp.media({ title: 'Select Image', button: { text: 'Use Image' }, multiple: false });
+            dailyUploader = wp.media.frames.file_frame = wp.media({
+                title: 'Add photos to this day',
+                button: { text: 'Add to album' },
+                library: { type: 'image' },
+                multiple: 'add'
+            });
             dailyUploader.on('select', function() {
-                var attachment = dailyUploader.state().get('selection').first().toJSON();
-                document.getElementById('sdc_image_url').value = attachment.url;
-                document.getElementById('sdc_image_caption').value = attachment.caption || '';
+                const chosen = dailyUploader.state().get('selection').toJSON();
+                if (photoEditor) photoEditor.addAttachments(chosen);
+                // Start with an empty selection next time.
+                dailyUploader.state().get('selection').reset();
             });
             dailyUploader.open();
         });
@@ -769,7 +752,6 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         document.getElementById('sdc_holiday_end').value = dateStr;
         document.getElementById('sdc_holiday_title').value = '';
         document.getElementById('sdc_holiday_image').value = '';
-        document.getElementById('sdc_image_caption').value = '';
         document.getElementById('sdc_event_start').value = dateStr;
         document.getElementById('sdc_event_end').value = dateStr;
         document.getElementById('sdc_event_title').value = '';
@@ -839,17 +821,14 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                     // D. Fill Daily Content
                     if(res.data.has_content) {
                         const d = res.data.data;
-                        const imgCont = document.getElementById('sdc-view-image-container');
-                        const capCont = document.getElementById('sdc-view-image-caption');
-
-                        if(d.image_url) {
+                        const dayPhotos = d.photos_list || [];
+                        if (dayPhotos.length && window.sdcAlbum) {
                             viewImageWrapper.style.display = 'block';
-                            imgCont.innerHTML = '<img src=\"' + d.image_url + '\">';
-                            capCont.textContent = d.image_caption || '';
+                            // Render once the view is visible, so the collage can measure its width.
+                            requestAnimationFrame(() => window.sdcAlbum.renderCollage(viewImageWrapper, dayPhotos, { date: dateStr, title: d.album_title || '' }));
                         } else {
                             viewImageWrapper.style.display = 'none';
-                            imgCont.innerHTML = '';
-                            capCont.textContent = '';
+                            viewImageWrapper.innerHTML = '';
                         }
 
                         const setTxt = (id, val) => {
@@ -895,8 +874,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                         if (viewStreak >= 2) habitHtml += ' <span class=\"sdc-streak\">🔥 ' + viewStreak + ' days</span>';
                         document.getElementById('view_habits').innerHTML = habitHtml;
 
-                        document.getElementById('sdc_image_url').value = d.image_url || '';
-                        document.getElementById('sdc_image_caption').value = d.image_caption || '';
+                        if (photoEditor) photoEditor.set(d.photos_list || []);
+                        document.getElementById('sdc_album_title').value = d.album_title || '';
 
                         document.getElementById('sdc_weight').value = d.weight || '';
 
@@ -914,7 +893,9 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                     } else {
                         document.getElementById('sdc-content-form').reset();
                         for (const id in editors) { if(editors[id]) editors[id].setData(''); }
+                        if (photoEditor) photoEditor.set([]);
                         viewImageWrapper.style.display = 'none';
+                        viewImageWrapper.innerHTML = '';
                         document.getElementById('sdc_date_field').value = dateStr;
                         document.getElementById('view_weight_container').textContent = '';
                         showEdit();

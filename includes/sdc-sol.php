@@ -451,11 +451,11 @@ TXT;
 		};
 		return array(
 			$fn( 'get_overview', 'Overview of the whole calendar: first and last entry dates, number of days with entries, totals of books/films/series, currently active books and series. Good first step for broad questions.', array(), array() ),
-			$fn( 'get_entries', 'Full entries for a date range (max ' . self::MAX_RANGE_DAYS . ' days): diary text, highlights, talking head, podcasts, lessons, posts, habits (YKW/sport/shower/reading), weight, image caption, films watched, books/series started or finished, holidays and events.', array(
+			$fn( 'get_entries', 'Full entries for a date range (max ' . self::MAX_RANGE_DAYS . ' days): diary text, highlights, talking head, podcasts, lessons, posts, habits (YKW/sport/shower/reading), weight, photo album title and photo captions, films watched, books/series started or finished, holidays and events.', array(
 				'start_date' => $date,
 				'end_date'   => $date,
 			), array( 'start_date', 'end_date' ) ),
-			$fn( 'search_entries', 'Find days whose text mentions a word or phrase (case-insensitive). Searches diary text, highlights, talking head, podcasts, lessons, posts, image captions, and titles of books/films/series/holidays/events. Returns dates with short snippets.', array(
+			$fn( 'search_entries', 'Find days whose text mentions a word or phrase (case-insensitive). Searches diary text, highlights, talking head, podcasts, lessons, posts, photo captions and album titles, and titles of books/films/series/holidays/events. Returns dates with short snippets.', array(
 				'query'      => array( 'type' => 'string', 'description' => 'Word or phrase to look for' ),
 				'start_date' => $odate,
 				'end_date'   => $odate,
@@ -594,7 +594,8 @@ TXT;
 				'podcasts_docs' => $this->plain( $r['podcasts'] ),
 				'lessons'       => $this->plain( $r['lessons'] ),
 				'posts'         => $this->plain( $r['posts_entries'] ),
-				'image_caption' => $this->plain( $r['image_caption'] ),
+				'photo_album'   => isset( $r['album_title'] ) ? $this->plain( $r['album_title'] ) : '',
+				'image_caption' => $this->plain( $r['image_caption'] ), // all photo captions of the day
 				'books_old_format' => $this->plain( $r['books'] ),
 				'films_old_format' => $this->plain( $r['films'] ),
 			);
@@ -644,7 +645,7 @@ TXT;
 		if ( $q === '' ) throw new Exception( 'query is empty' );
 		list( $s, $e ) = $this->range( $a, false );
 		$like = '%' . $wpdb->esc_like( $q ) . '%';
-		$fields = array( 'daily_text', 'highlights', 'talking_head', 'podcasts', 'lessons', 'posts_entries', 'image_caption', 'books', 'films' );
+		$fields = array( 'daily_text', 'highlights', 'talking_head', 'podcasts', 'lessons', 'posts_entries', 'image_caption', 'album_title', 'books', 'films' );
 
 		$where = array();
 		foreach ( $fields as $f ) $where[] = "$f LIKE %s";

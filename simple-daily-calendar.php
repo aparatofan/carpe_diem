@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.5
+ * Version: 6.6
  * Author: AI Assistant
  */
 
@@ -12,9 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.5';
+	const VERSION = '6.6';
 	// Bump when the database tables change; existing sites are upgraded automatically.
-	const DB_VERSION = '6.1';
+	const DB_VERSION = '6.6';
 	const OPT_DB_VERSION = 'sdc_db_version';
 
 	// --- PIN LOCK SETTINGS ---
@@ -290,6 +290,63 @@ class SimpleDailyCalendar {
 		return $out;
 	}
 
+	// =========================================================
+	// --- PHOTO ALBUMS (6.6) ---
+	// A day can hold many photos. They live as JSON in the `photos` column:
+	// [{ id, url, large, thumb, w, h, caption }, ...] – the first one is the cover.
+	// `image_url` / `image_caption` are still filled (cover + all captions) so older
+	// code, Sol and the "Pictures" filter keep working without changes.
+	// =========================================================
+
+	const MAX_PHOTOS_PER_DAY = 60;
+
+	/** Accepts a JSON string or an array from the browser; returns a clean list. */
+	private function clean_photos( $raw ) {
+		if ( is_string( $raw ) ) {
+			if ( strlen( $raw ) > 524288 ) return array();
+			$raw = json_decode( $raw, true );
+		}
+		if ( ! is_array( $raw ) ) return array();
+		$out = array();
+		foreach ( array_slice( $raw, 0, self::MAX_PHOTOS_PER_DAY ) as $p ) {
+			if ( ! is_array( $p ) || empty( $p['url'] ) ) continue;
+			$url = esc_url_raw( (string) $p['url'] );
+			if ( $url === '' ) continue;
+			$out[] = array(
+				'id'      => isset( $p['id'] ) ? max( 0, intval( $p['id'] ) ) : 0,
+				'url'     => $url,
+				'large'   => ! empty( $p['large'] ) ? esc_url_raw( (string) $p['large'] ) : '',
+				'thumb'   => ! empty( $p['thumb'] ) ? esc_url_raw( (string) $p['thumb'] ) : '',
+				'w'       => isset( $p['w'] ) ? max( 0, intval( $p['w'] ) ) : 0,
+				'h'       => isset( $p['h'] ) ? max( 0, intval( $p['h'] ) ) : 0,
+				'caption' => isset( $p['caption'] ) ? mb_substr( sanitize_textarea_field( (string) $p['caption'] ), 0, 500 ) : '',
+			);
+		}
+		return $out;
+	}
+
+	/** The photos of a content row; a pre-6.6 single image becomes a one-photo album. */
+	private function photos_for_row( $row ) {
+		if ( ! is_array( $row ) ) return array();
+		$photos = ! empty( $row['photos'] ) ? $this->clean_photos( (string) $row['photos'] ) : array();
+		if ( empty( $photos ) && ! empty( $row['image_url'] ) ) {
+			$photos = $this->clean_photos( array( array(
+				'url'     => $row['image_url'],
+				'caption' => isset( $row['image_caption'] ) ? $row['image_caption'] : '',
+			) ) );
+		}
+		return $photos;
+	}
+
+	/** All captions in one line – stored in image_caption so Sol can read and search them. */
+	private function captions_text( $photos ) {
+		$caps = array();
+		foreach ( $photos as $p ) {
+			if ( $p['caption'] !== '' ) $caps[] = $p['caption'];
+		}
+		return implode( ' · ', $caps );
+	}
+
 	/** Turns the JSON sent by the browser into a safe, known structure (or null). */
 	private function clean_draft( $raw ) {
 		if ( ! is_string( $raw ) || $raw === '' || strlen( $raw ) > 1048576 ) return null;
@@ -305,8 +362,8 @@ class SimpleDailyCalendar {
 			$fields[ $k ] = ! empty( $f[ $k ] );
 		}
 		$fields['sdc_weight']        = ( isset( $f['sdc_weight'] ) && is_numeric( $f['sdc_weight'] ) ) ? (string) floatval( $f['sdc_weight'] ) : '';
-		$fields['sdc_image_url']     = isset( $f['sdc_image_url'] ) ? esc_url_raw( (string) $f['sdc_image_url'] ) : '';
-		$fields['sdc_image_caption'] = isset( $f['sdc_image_caption'] ) ? sanitize_textarea_field( (string) $f['sdc_image_caption'] ) : '';
+		$fields['sdc_photos']        = $this->clean_photos( isset( $f['sdc_photos'] ) ? $f['sdc_photos'] : array() );
+		$fields['sdc_album_title']   = isset( $f['sdc_album_title'] ) ? sanitize_text_field( (string) $f['sdc_album_title'] ) : '';
 
 		$ids = function ( $list ) {
 			return is_array( $list ) ? array_values( array_filter( array_map( 'intval', array_slice( $list, 0, 200 ) ) ) ) : array();
@@ -489,6 +546,8 @@ class SimpleDailyCalendar {
 			event_date DATE NOT NULL,
 			image_url TEXT,
 			image_caption TEXT,
+			album_title VARCHAR(255) DEFAULT '',
+			photos LONGTEXT,
 			ykw TINYINT(1) DEFAULT 0,
 			sport TINYINT(1) DEFAULT 0,
 			shower TINYINT(1) DEFAULT 0,
@@ -573,11 +632,22 @@ class SimpleDailyCalendar {
 		if ( get_option( self::OPT_DB_VERSION ) === self::DB_VERSION ) return;
 		global $wpdb;
 		$this->create_tables(); // dbDelta adds missing columns, never removes data
-		// Belt and braces: make sure the column really exists before saves start using it.
-		if ( ! $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $this->table_content LIKE %s", 'reading' ) ) ) {
-			$wpdb->query( "ALTER TABLE $this->table_content ADD COLUMN reading TINYINT(1) DEFAULT 0 AFTER shower" );
+		// Belt and braces: make sure the columns really exist before saves start using them.
+		$columns = array(
+			'reading'     => "reading TINYINT(1) DEFAULT 0 AFTER shower",        // 6.1
+			'album_title' => "album_title VARCHAR(255) DEFAULT '' AFTER image_caption", // 6.6
+			'photos'      => "photos LONGTEXT AFTER album_title",               // 6.6
+		);
+		$all_there = true;
+		foreach ( $columns as $name => $definition ) {
+			if ( ! $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $this->table_content LIKE %s", $name ) ) ) {
+				$wpdb->query( "ALTER TABLE $this->table_content ADD COLUMN $definition" );
+			}
+			if ( ! $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $this->table_content LIKE %s", $name ) ) ) {
+				$all_there = false;
+			}
 		}
-		if ( $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $this->table_content LIKE %s", 'reading' ) ) ) {
+		if ( $all_there ) {
 			update_option( self::OPT_DB_VERSION, self::DB_VERSION, false );
 		}
 	}
@@ -601,9 +671,12 @@ class SimpleDailyCalendar {
 			wp_enqueue_script( 'fullcalendar-js', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js', array( 'jquery' ), '6.1.10', true );
 			wp_enqueue_script( 'ckeditor-js', 'https://cdn.ckeditor.com/ckeditor5/41.2.0/classic/ckeditor.js', array(), '41.2.0', true );
 
-			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array(), self::VERSION );
+			// Condensed display type for the photo-album collage (6.6).
+			wp_enqueue_style( 'sdc-fonts', 'https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500&display=swap', array(), null );
+			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array( 'sdc-fonts' ), self::VERSION );
 			wp_enqueue_script( 'sdc-lock', plugin_dir_url( __FILE__ ) . 'assets/sdc-lock.js', array( 'jquery' ), self::VERSION, true );
-			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js', 'sdc-lock' ), self::VERSION, true );
+			wp_enqueue_script( 'sdc-album', plugin_dir_url( __FILE__ ) . 'assets/sdc-album.js', array(), self::VERSION, true );
+			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js', 'sdc-lock', 'sdc-album' ), self::VERSION, true );
 			wp_enqueue_script( 'sdc-sol', plugin_dir_url( __FILE__ ) . 'assets/sdc-sol.js', array( 'jquery', 'sdc-lock' ), self::VERSION, true );
 
 			// Calendar data is NOT embedded in the page any more – it is only
@@ -678,9 +751,19 @@ class SimpleDailyCalendar {
 			if ( isset( $series_dates[ $row['event_date'] ] ) ) $icons .= '📺 ';
 			if ( ! empty( $row['lessons'] ) )       $icons .= '🌳 ';
 			if ( ! empty( $row['posts_entries'] ) ) $icons .= '✍️ ';
-			// The picture icon itself is drawn by the month view (it opens the image),
+			// The cover thumbnail is drawn by the month view (it opens the photos),
 			// so it is not part of the title text.
-			$has_image = ! empty( $row['image_url'] );
+			$photos    = $this->photos_for_row( $row );
+			$has_image = ! empty( $photos );
+			$light     = array();
+			foreach ( $photos as $p ) {
+				$light[] = array(
+					'url'     => $p['url'],
+					'large'   => $p['large'] ? $p['large'] : $p['url'],
+					'thumb'   => $p['thumb'] ? $p['thumb'] : ( $p['large'] ? $p['large'] : $p['url'] ),
+					'caption' => $p['caption'],
+				);
+			}
 
 			if( ! empty( $icons ) || $has_image ) {
 				$events[] = array(
@@ -709,8 +792,10 @@ class SimpleDailyCalendar {
 						'lessons' => !empty($row['lessons']),
 						'posts_entries' => !empty($row['posts_entries']),
 						'image' => $has_image,
-						'image_url' => $has_image ? esc_url_raw( $row['image_url'] ) : '',
-						'image_caption' => $has_image ? (string) $row['image_caption'] : ''
+						'image_url' => $has_image ? $photos[0]['url'] : '',
+						'image_caption' => $has_image ? $photos[0]['caption'] : '',
+						'photos' => $light,
+						'album_title' => isset( $row['album_title'] ) ? (string) $row['album_title'] : ''
 					)
 				);
 			}
@@ -885,10 +970,7 @@ class SimpleDailyCalendar {
 						<div id="sdc-holiday-display-area"></div>
 					<div id="sdc-event-display-area"></div>
 
-						<div id="sdc-view-image-wrapper" style="display:none; margin-bottom: 20px;">
-							<div id="sdc-view-image-container"></div>
-							<div id="sdc-view-image-caption"></div>
-						</div>
+						<div id="sdc-view-image-wrapper" style="display:none;"></div>
 
 						<div class="sdc-view-section" style="background:#f9f9f9; padding:10px; border-radius:4px;">
 							<div style="display:flex; justify-content:space-between;">
@@ -933,12 +1015,16 @@ class SimpleDailyCalendar {
 								</div>
 							</div>
 
-							<div class="sdc-form-group">
-								<label>Image:</label>
-								<div style="display:flex; gap:10px;">
-									<input type="url" id="sdc_image_url" name="sdc_image_url" class="widefat" placeholder="https://..." style="flex-grow:1;">
-									<input type="hidden" id="sdc_image_caption" name="sdc_image_caption" value="">
-									<button type="button" id="sdc-upload-btn" class="button">Select Image</button>
+							<div class="sdc-form-group sdc-album-editor">
+								<div class="sdc-album-editor-head">
+									<label for="sdc_album_title">📷 Photos</label>
+									<input type="text" id="sdc_album_title" name="sdc_album_title" class="sdc-album-title-input" maxlength="120" placeholder="Album title (optional) – e.g. Autumn walk">
+								</div>
+								<input type="hidden" id="sdc_photos" name="sdc_photos" value="[]">
+								<div id="sdc-photo-grid" class="sdc-photo-grid"></div>
+								<div class="sdc-album-editor-foot">
+									<button type="button" id="sdc-upload-btn" class="button">+ Add photos</button>
+									<span class="sdc-album-hint">Select several at once. Drag to reorder – the first photo is the cover.</span>
 								</div>
 							</div>
 
@@ -1080,6 +1166,10 @@ class SimpleDailyCalendar {
 		$date = sanitize_text_field( $_POST['date'] );
 
 		$content = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $this->table_content WHERE event_date = %s LIMIT 1", $date ), ARRAY_A );
+		if ( $content ) {
+			$content['photos_list'] = $this->photos_for_row( $content );
+			unset( $content['photos'] );
+		}
 
 		$holidays = $wpdb->get_results( $wpdb->prepare(
 			"SELECT * FROM $this->table_holidays WHERE start_date <= %s AND end_date >= %s",
@@ -1147,10 +1237,14 @@ class SimpleDailyCalendar {
 			$event_date
 		), ARRAY_A );
 
+		$photos = $this->clean_photos( isset( $_POST['sdc_photos'] ) ? wp_unslash( $_POST['sdc_photos'] ) : '' );
+
 		$data = array(
 			'event_date'   => $event_date,
-			'image_url'    => esc_url_raw( $_POST['sdc_image_url'] ),
-			'image_caption'=> sanitize_textarea_field( wp_unslash($_POST['sdc_image_caption']) ),
+			'image_url'    => ! empty( $photos ) ? $photos[0]['url'] : '',
+			'image_caption'=> $this->captions_text( $photos ),
+			'album_title'  => isset( $_POST['sdc_album_title'] ) ? sanitize_text_field( wp_unslash( $_POST['sdc_album_title'] ) ) : '',
+			'photos'       => ! empty( $photos ) ? wp_json_encode( $photos ) : '',
 			'ykw'          => isset($_POST['sdc_ykw']) ? 1 : 0,
 			'sport'        => isset($_POST['sdc_sport']) ? 1 : 0,
 			'shower'       => isset($_POST['sdc_shower']) ? 1 : 0,
