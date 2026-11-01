@@ -259,8 +259,20 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             tab.classList.add('active');
             const activePane = document.querySelector('#sdc-tab-' + tab.dataset.tab + '-area');
             if(activePane) activePane.style.display = 'block';
+            syncSaveButtons();
         });
     });
+
+    // Save Content / Cancel sit in the top bar. Show them only while the
+    // Day Content form is actually on screen (edit mode + Day Content tab).
+    function syncSaveButtons() {
+        const editMode = document.getElementById('sdc-edit-mode');
+        const show = !!(editMode && editMode.offsetParent !== null);
+        ['sdc-save-btn', 'sdc-cancel-edit-btn'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) b.style.display = show ? 'inline-block' : 'none';
+        });
+    }
 
     const closeModal = () => {
         modal.style.display = 'none';
@@ -418,12 +430,14 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         document.getElementById('sdc-view-mode').style.display='block';
         document.getElementById('sdc-edit-mode').style.display='none';
         if(editTopBtn) editTopBtn.style.display = 'inline-block';
+        syncSaveButtons();
     };
 
     const showEdit = () => {
         document.getElementById('sdc-view-mode').style.display='none';
         document.getElementById('sdc-edit-mode').style.display='block';
         if(editTopBtn) editTopBtn.style.display = 'none';
+        syncSaveButtons();
         initEditors();
     };
 

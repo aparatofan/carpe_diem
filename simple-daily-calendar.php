@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.6
+ * Version: 6.7
  * Author: AI Assistant
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.6';
+	const VERSION = '6.7';
 	// Bump when the database tables change; existing sites are upgraded automatically.
 	const DB_VERSION = '6.6';
 	const OPT_DB_VERSION = 'sdc_db_version';
@@ -949,6 +949,9 @@ class SimpleDailyCalendar {
 
 						<?php if ( $this->can_use_calendar() ) : ?>
 							<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
+							<?php /* Save/Cancel live in the top bar; form="" ties Save to the Day Content form. Shown only while editing. */ ?>
+							<button type="submit" form="sdc-content-form" id="sdc-save-btn" class="button button-primary" style="display:none;">Save Content</button>
+							<button type="button" id="sdc-cancel-edit-btn" class="button sdc-cancel-top-btn" style="display:none;">Cancel</button>
 						<?php endif; ?>
 						<button type="button" class="button sdc-close-btn">Close</button>
 						<button type="button" class="button sdc-lock-now-modal" title="Lock now">🔒 Lock</button>
@@ -1072,8 +1075,6 @@ class SimpleDailyCalendar {
 								</div>
 							<?php endforeach; ?>
 
-							<button type="submit" id="sdc-save-btn" class="button button-primary">Save Content</button>
-							<button type="button" id="sdc-cancel-edit-btn" class="button">Cancel</button>
 							<span id="sdc-form-feedback"></span>
 						</form>
 					</div>
