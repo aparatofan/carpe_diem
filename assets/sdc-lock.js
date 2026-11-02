@@ -73,6 +73,9 @@
         // hiding) also stops the browser from refilling form fields after reload.
         var app = document.getElementById('sdc-app');
         if (app && app.parentNode) app.parentNode.removeChild(app);
+        // The photo viewer lives on <body> (so it can cover the site menu) – remove it too.
+        $('.sdc-viewer').remove();
+        document.documentElement.classList.remove('sdc-viewer-lock');
         $('.media-modal, .media-modal-backdrop').hide();
 
         var t = token;

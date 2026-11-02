@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.9.1
+ * Version: 6.9.2
  * Author: AI Assistant
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.9.1';
+	const VERSION = '6.9.2';
 	// Bump when the database tables change; existing sites are upgraded automatically.
 	const DB_VERSION = '6.9';
 	const OPT_DB_VERSION = 'sdc_db_version';

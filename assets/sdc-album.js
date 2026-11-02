@@ -264,7 +264,10 @@
     let state = { photos: [], index: 0, opts: {} };
 
     function buildViewer() {
-        const host = document.getElementById('sdc-app') || document.body; // the lock removes #sdc-app
+        // Attached to <body>, not #sdc-app: the theme puts the page content on a layer
+        // below its menu, so inside #sdc-app the viewer slid under the menu (6.9.2).
+        // The PIN lock removes it together with #sdc-app (see sdc-lock.js).
+        const host = document.body;
         const v = el('div', 'sdc-viewer');
         v.setAttribute('role', 'dialog');
         v.setAttribute('aria-modal', 'true');

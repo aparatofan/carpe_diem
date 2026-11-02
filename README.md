@@ -56,6 +56,8 @@ A day can hold many photos instead of one picture.
   Black-and-white by default (colour on hover); the switch is remembered in that browser.
 - **Viewer:** click any photo – full screen, arrows / ← → keys / swipe, captions,
   thumbnail strip, Esc or swipe down to close.
+  Since 6.9.2 it covers the whole screen including the site menu, on solid black with a
+  margin all round the photo (it sits on `<body>`; the PIN lock removes it with the app).
 - **Month view:** a small round cover thumbnail with the number of photos; click it to
   open the album – the same collage as in the day view, in its own window, with *Open day*
   (6.9; before, it opened only the first photo in the viewer).
