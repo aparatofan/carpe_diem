@@ -1215,6 +1215,9 @@ html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }
     font-weight: 400;
     line-height: 1.2;
 }
+/* Keep room for the scrollbar at all times, so the window's width never jumps
+   when the collage gets just tall enough to scroll (that jump made it shake). */
+.sdc-modal-content { scrollbar-gutter: stable; }
 .sdc-album-pop-body { padding: 20px; }
 .sdc-album-pop:focus { outline: none; }
 @media (max-width: 600px) {
