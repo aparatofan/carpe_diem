@@ -70,6 +70,13 @@
 }
 .fc-daygrid-event { white-space: normal !important; }
 
+/* 6.9.3: equal week rows in the month view. FullCalendar stretches the month
+   table to the calendar's height, and the browser shares the spare height out
+   in proportion to each row's content, so a week with icons and stripes came
+   out far taller than empty weeks. The month view always shows 6 weeks, so
+   each row gets a sixth; a week with more content than that still grows. */
+.fc .fc-daygrid-body table > tbody > tr { height: calc(100% / 6); }
+
 /* Modal Window */
 .sdc-modal { 
     display: none; position: fixed; z-index: 9999999; 
