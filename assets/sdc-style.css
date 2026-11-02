@@ -1117,3 +1117,87 @@ html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }
 .sdc-photo-empty:hover { border-color: var(--sdc-accent); background: #fff; }
 .sdc-album-editor-foot { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
 .sdc-album-hint { color: var(--sdc-ink-soft); font-size: .85rem; }
+
+/* ===================================================================
+   Text editor (6.8) – Quill 2, the same editor as TBT Notes.
+   Bold, italic, strikethrough and five highlighter colours.
+   =================================================================== */
+:root {
+    /* Same highlight colours as TBT Notes. */
+    --sdc-hl-blue:   #bcdcff;
+    --sdc-hl-red:    #ffc2c2;
+    --sdc-hl-yellow: #fff2a8;
+    --sdc-hl-pink:   #ffd1e8;
+    --sdc-hl-green:  #c6efc3;
+}
+
+.sdc-rte {
+    margin-top: 5px;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    background: #fff;
+}
+.sdc-rte:focus-within { border-color: #0856c9; box-shadow: 0 0 0 1px #0856c9; }
+
+.sdc-rte .ql-toolbar.ql-snow {
+    border: 0;
+    border-bottom: 1px solid #e5e5e5;
+    padding: 4px 6px;
+    font-family: sans-serif;
+}
+.sdc-rte .ql-toolbar.ql-snow .ql-formats { margin-right: 10px; }
+.sdc-rte .ql-container.ql-snow { border: 0; font-size: inherit; }
+
+/* Writing area: same type as the day view, so text looks the same in both. */
+.sdc-rte .ql-editor {
+    min-height: 64px;
+    padding: 10px 12px;
+    font-family: 'Roboto Slab', Georgia, serif;
+    font-size: 1.05rem;
+    line-height: 1.6;
+    color: #222;
+}
+.sdc-rte .ql-editor p { margin: 0; }
+
+/* Highlighter swatches */
+.sdc-rte .ql-toolbar .sdc-hl-btn {
+    width: 22px !important;
+    height: 22px !important;
+    padding: 0 !important;
+    margin: 1px 3px 0 0;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.2) !important;
+    cursor: pointer;
+}
+.sdc-rte .ql-toolbar .sdc-hl-btn:hover { border-color: rgba(0, 0, 0, 0.45) !important; }
+.sdc-rte .ql-toolbar .sdc-hl-btn.is-active { box-shadow: 0 0 0 2px #fff, 0 0 0 3px #0856c9; }
+.sdc-rte .ql-toolbar .sdc-hl-btn[data-color="blue"]   { background: var(--sdc-hl-blue); }
+.sdc-rte .ql-toolbar .sdc-hl-btn[data-color="red"]    { background: var(--sdc-hl-red); }
+.sdc-rte .ql-toolbar .sdc-hl-btn[data-color="yellow"] { background: var(--sdc-hl-yellow); }
+.sdc-rte .ql-toolbar .sdc-hl-btn[data-color="pink"]   { background: var(--sdc-hl-pink); }
+.sdc-rte .ql-toolbar .sdc-hl-btn[data-color="green"]  { background: var(--sdc-hl-green); }
+.sdc-rte .ql-toolbar .sdc-hl-clear {
+    width: auto !important;
+    padding: 0 5px !important;
+    font-size: 13px;
+    line-height: 22px;
+    color: #646970;
+    cursor: pointer;
+}
+.sdc-rte .ql-toolbar .sdc-hl-clear:hover { color: #0856c9; }
+
+/* Highlights – in the editor and in the day view */
+.sdc-hl-blue,   .ql-editor .sdc-hl-blue   { background-color: var(--sdc-hl-blue);   border-radius: 2px; }
+.sdc-hl-red,    .ql-editor .sdc-hl-red    { background-color: var(--sdc-hl-red);    border-radius: 2px; }
+.sdc-hl-yellow, .ql-editor .sdc-hl-yellow { background-color: var(--sdc-hl-yellow); border-radius: 2px; }
+.sdc-hl-pink,   .ql-editor .sdc-hl-pink   { background-color: var(--sdc-hl-pink);   border-radius: 2px; }
+.sdc-hl-green,  .ql-editor .sdc-hl-green  { background-color: var(--sdc-hl-green);  border-radius: 2px; }
+
+/* SAVE button: steady width while it says SAVING… / SAVED ✓ */
+.sdc-modal-topbar .sdc-modal-actions #sdc-save-btn { min-width: 96px; text-align: center; }
+.sdc-modal-topbar .sdc-modal-actions #sdc-save-btn:disabled { opacity: 0.7; cursor: wait; }
+.sdc-modal-topbar .sdc-modal-actions #sdc-save-btn.is-saved {
+    background: #16a34a !important;
+    color: #fff !important;
+    border-color: #16a34a !important;
+}

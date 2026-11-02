@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.7
+ * Version: 6.8
  * Author: AI Assistant
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.7';
+	const VERSION = '6.8';
 	// Bump when the database tables change; existing sites are upgraded automatically.
 	const DB_VERSION = '6.6';
 	const OPT_DB_VERSION = 'sdc_db_version';
@@ -669,14 +669,16 @@ class SimpleDailyCalendar {
 			wp_enqueue_media();
 			wp_enqueue_style( 'fullcalendar-css', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css', array(), '6.1.10' );
 			wp_enqueue_script( 'fullcalendar-js', 'https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js', array( 'jquery' ), '6.1.10', true );
-			wp_enqueue_script( 'ckeditor-js', 'https://cdn.ckeditor.com/ckeditor5/41.2.0/classic/ckeditor.js', array(), '41.2.0', true );
+			// Text editor: Quill 2.0.3, bundled locally (the same editor and version as TBT Notes).
+			wp_enqueue_style( 'sdc-quill', plugin_dir_url( __FILE__ ) . 'assets/vendor/quill/quill.snow.css', array(), '2.0.3' );
+			wp_enqueue_script( 'sdc-quill', plugin_dir_url( __FILE__ ) . 'assets/vendor/quill/quill.js', array(), '2.0.3', true );
 
 			// Condensed display type for the photo-album collage (6.6).
 			wp_enqueue_style( 'sdc-fonts', 'https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500&display=swap', array(), null );
-			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array( 'sdc-fonts' ), self::VERSION );
+			wp_enqueue_style( 'sdc-style', plugin_dir_url( __FILE__ ) . 'assets/sdc-style.css', array( 'sdc-fonts', 'sdc-quill' ), self::VERSION );
 			wp_enqueue_script( 'sdc-lock', plugin_dir_url( __FILE__ ) . 'assets/sdc-lock.js', array( 'jquery' ), self::VERSION, true );
 			wp_enqueue_script( 'sdc-album', plugin_dir_url( __FILE__ ) . 'assets/sdc-album.js', array(), self::VERSION, true );
-			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'ckeditor-js', 'sdc-lock', 'sdc-album' ), self::VERSION, true );
+			wp_enqueue_script( 'sdc-script', plugin_dir_url( __FILE__ ) . 'assets/sdc-script.js', array( 'jquery', 'fullcalendar-js', 'sdc-quill', 'sdc-lock', 'sdc-album' ), self::VERSION, true );
 			wp_enqueue_script( 'sdc-sol', plugin_dir_url( __FILE__ ) . 'assets/sdc-sol.js', array( 'jquery', 'sdc-lock' ), self::VERSION, true );
 
 			// Calendar data is NOT embedded in the page any more – it is only
@@ -950,7 +952,7 @@ class SimpleDailyCalendar {
 						<?php if ( $this->can_use_calendar() ) : ?>
 							<button type="button" id="sdc-btn-switch-to-edit-top" class="button button-primary">Edit</button>
 							<?php /* Save/Cancel live in the top bar; form="" ties Save to the Day Content form. Shown only while editing. */ ?>
-							<button type="submit" form="sdc-content-form" id="sdc-save-btn" class="button button-primary" style="display:none;">Save Content</button>
+							<button type="submit" form="sdc-content-form" id="sdc-save-btn" class="button button-primary" style="display:none;" title="Save (the window stays open)">SAVE</button>
 							<button type="button" id="sdc-cancel-edit-btn" class="button sdc-cancel-top-btn" style="display:none;">Cancel</button>
 						<?php endif; ?>
 						<button type="button" class="button sdc-close-btn">Close</button>
@@ -997,7 +999,7 @@ class SimpleDailyCalendar {
 					<div id="sdc-edit-mode" style="display:none;">
 						<div id="sdc-draft-banner" class="sdc-draft-banner" style="display:none;">
 							<span>↩️ <strong>Restored:</strong> the text you were writing when Kalendarz locked<span id="sdc-draft-when"></span>.
-							Click <em>Save Content</em> to keep it.</span>
+							Click <em>SAVE</em> to keep it.</span>
 							<button type="button" id="sdc-draft-discard" class="button">Discard it</button>
 						</div>
 						<form id="sdc-content-form">
@@ -1373,7 +1375,12 @@ class SimpleDailyCalendar {
 			delete_user_meta( get_current_user_id(), self::META_DRAFT );
 		}
 
-		wp_send_json_success( 'Saved successfully!' );
+		// The window stays open after saving, so send back fresh calendar data
+		// for the month view instead of having the page reload.
+		wp_send_json_success( array(
+			'message' => 'Saved',
+			'events'  => json_decode( $this->get_all_events_json(), true ),
+		) );
 	}
 
 	public function ajax_add_holiday() {
