@@ -15,7 +15,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     let activeFilter = 'all';
 
     const iconMap = {
-        'weight': '⚖️', 'shower': '🚿', 'sport': '🚴', 'ykw': '🤫', 'reading': '👓',
+        'weight': '⚖️', 'shower': '🚿', 'sport': '🚴', 'ykw': '🤫', 'reading': '👓', 'ministry': '👣',
         'highlights': '⭐', 'daily_text': '📝', 'talking_head': '🗣️',
         'podcasts': '🎧', 'books': '📖', 'films': '🎬', 'series': '📺',
         'lessons': '🌳', 'posts_entries': '✍️',
@@ -25,10 +25,14 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     // --- READING STREAK ---
     // Days with the reading box ticked, taken from the calendar data loaded at unlock.
     const readingDays = new Set();
+    const ministryDays = new Set(); // 6.9: days with the ministry box ticked
     function rebuildReadingDays() {
         readingDays.clear();
+        ministryDays.clear();
         masterEvents.forEach(evt => {
-            if (evt.extendedProps && evt.extendedProps.reading) readingDays.add(String(evt.start).slice(0, 10));
+            const day = String(evt.start).slice(0, 10);
+            if (evt.extendedProps && evt.extendedProps.reading) readingDays.add(day);
+            if (evt.extendedProps && evt.extendedProps.ministry) ministryDays.add(day);
         });
     }
     rebuildReadingDays();
@@ -60,6 +64,29 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     const readingBox = document.getElementById('sdc_reading');
     if (readingBox) readingBox.addEventListener('change', updateReadingStreak);
 
+    // --- MINISTRY COUNT ---
+    // How many times in the month of dateStr; dateStr itself counts only if tickedToday.
+    const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    function ministryCountInMonth(dateStr, tickedToday) {
+        const prefix = dateStr.slice(0, 7);
+        let n = tickedToday ? 1 : 0;
+        ministryDays.forEach(d => { if (d !== dateStr && d.slice(0, 7) === prefix) n++; });
+        return n;
+    }
+    function ministryMonthLabel(dateStr, n) {
+        return n + '× in ' + MONTHS[parseInt(dateStr.slice(5, 7), 10) - 1];
+    }
+    function updateMinistryCount() {
+        const el = document.getElementById('sdc-ministry-count');
+        const box = document.getElementById('sdc_ministry');
+        const dateEl = document.getElementById('sdc_date_field');
+        if (!el || !box || !dateEl || !dateEl.value) return;
+        const n = ministryCountInMonth(dateEl.value, box.checked);
+        el.textContent = n > 0 ? ministryMonthLabel(dateEl.value, n) : '';
+    }
+    const ministryBox = document.getElementById('sdc_ministry');
+    if (ministryBox) ministryBox.addEventListener('change', updateMinistryCount);
+
     function getFilteredEvents() {
         if(activeFilter === 'all') return masterEvents;
         const filtered = [];
@@ -85,6 +112,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             { id: 'sport', label: 'Sport', icon: '🚴' },
             { id: 'ykw', label: 'YKW', icon: '🤫' },
             { id: 'reading', label: 'Reading', icon: '👓' },
+            { id: 'ministry', label: 'Ministry', icon: '👣' },
             { id: 'weight', label: 'Weight', icon: '⚖️' },
             { id: 'daily_text', label: 'Text', icon: '📝' },
             { id: 'highlights', label: 'Highlights', icon: '⭐' },
@@ -231,7 +259,12 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     function showDayPicture(dateStr, props) {
         const photos = (props && props.photos) || [];
         if (!photos.length || !window.sdcAlbum) return;
-        window.sdcAlbum.openViewer(photos, 0, { date: dateStr, onOpenDay: d => openModalForDate(d, 'standard') });
+        // 6.9: open the whole album (the collage from the day view), not just the first photo.
+        window.sdcAlbum.openAlbum(photos, {
+            date: dateStr,
+            title: (props && props.album_title) || '',
+            onOpenDay: d => openModalForDate(d, 'standard')
+        });
     }
 
     // --- MODAL & EDITOR LOGIC ---
@@ -337,7 +370,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         const chk = id => { const el = document.getElementById(id); return !!(el && el.checked); };
         const fields = {
             sdc_photos: photoEditor ? photoEditor.get() : [], sdc_album_title: val('sdc_album_title'),
-            sdc_ykw: chk('sdc_ykw'), sdc_sport: chk('sdc_sport'), sdc_shower: chk('sdc_shower'), sdc_reading: chk('sdc_reading'),
+            sdc_ykw: chk('sdc_ykw'), sdc_sport: chk('sdc_sport'), sdc_shower: chk('sdc_shower'), sdc_reading: chk('sdc_reading'), sdc_ministry: chk('sdc_ministry'),
             sdc_weight: val('sdc_weight')
         };
         ['sdc_daily_text','sdc_highlights','sdc_talking_head','sdc_podcasts','sdc_lessons','sdc_posts_entries'].forEach(id => {
@@ -373,8 +406,9 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         if (photoEditor) photoEditor.set(draftPhotos);
         setVal('sdc_album_title', f.sdc_album_title);
         setVal('sdc_weight', f.sdc_weight);
-        setChk('sdc_ykw', f.sdc_ykw); setChk('sdc_sport', f.sdc_sport); setChk('sdc_shower', f.sdc_shower); setChk('sdc_reading', f.sdc_reading);
+        setChk('sdc_ykw', f.sdc_ykw); setChk('sdc_sport', f.sdc_sport); setChk('sdc_shower', f.sdc_shower); setChk('sdc_reading', f.sdc_reading); setChk('sdc_ministry', f.sdc_ministry);
         updateReadingStreak();
+        updateMinistryCount();
 
         const textIds = ['sdc_daily_text','sdc_highlights','sdc_talking_head','sdc_podcasts','sdc_lessons','sdc_posts_entries'];
         textIds.forEach(id => setVal(id, f[id]));
@@ -1062,6 +1096,10 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             habitHtml += (d.reading == 1 ? '✅ READING' : '⬜ READING');
             const viewStreak = readingStreakAt(dateStr, d.reading == 1);
             if (viewStreak >= 2) habitHtml += ' <span class=\"sdc-streak\">🔥 ' + viewStreak + ' days</span>';
+            habitHtml += '<span style=\"margin-left:15px;\"></span>';
+            habitHtml += (d.ministry == 1 ? '✅ MINISTRY' : '⬜ MINISTRY');
+            const viewMinistry = ministryCountInMonth(dateStr, d.ministry == 1);
+            if (viewMinistry > 0) habitHtml += ' <span class=\"sdc-streak\">👣 ' + ministryMonthLabel(dateStr, viewMinistry) + '</span>';
             document.getElementById('view_habits').innerHTML = habitHtml;
 
             if (!keepEditing) {
@@ -1074,6 +1112,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                 document.getElementById('sdc_sport').checked = (d.sport == 1);
                 document.getElementById('sdc_shower').checked = (d.shower == 1);
                 document.getElementById('sdc_reading').checked = (d.reading == 1);
+                document.getElementById('sdc_ministry').checked = (d.ministry == 1);
 
                 const textFields = ['highlights','daily_text','talking_head','podcasts','lessons','posts_entries'];
                 textFields.forEach(f => {
@@ -1093,7 +1132,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             showEdit();
         }
 
-        if (!keepEditing) updateReadingStreak();
+        if (!keepEditing) { updateReadingStreak(); updateMinistryCount(); }
 
         // E. Manage Holidays List
         holidayList.innerHTML = '';

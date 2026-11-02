@@ -3,6 +3,7 @@
  *
  *   sdcAlbum.renderCollage(el, photos, { date, title, onOpen })  – magazine collage for the day view
  *   sdcAlbum.openViewer(photos, index, { date, onOpenDay })       – full-screen viewer
+ *   sdcAlbum.openAlbum(photos, { date, title, onOpenDay })        – the collage in its own window (6.9)
  *   sdcAlbum.createEditor(gridEl, hiddenInput, onChange)          – photo manager in the edit form
  *
  * A photo is { id, url, large, thumb, w, h, caption }. The first photo is the cover.
@@ -473,5 +474,73 @@
         };
     }
 
-    window.sdcAlbum = { renderCollage: renderCollage, openViewer: openViewer, closeViewer: closeViewer, createEditor: createEditor };
+    // =====================================================================
+    // ALBUM WINDOW (6.9) – the day's collage on its own, opened from the
+    // month-view thumbnail. Looks like the day window; photos open the viewer.
+    // =====================================================================
+    let albumPop = null;
+    let albumOpts = {};
+
+    function onAlbumKey(e) {
+        if (e.key !== 'Escape' || !albumPop || albumPop.style.display === 'none') return;
+        if (viewer && viewer.classList.contains('is-open')) return; // Esc closes the photo first
+        e.stopPropagation();
+        closeAlbum();
+    }
+
+    function buildAlbum() {
+        const host = document.getElementById('sdc-app') || document.body; // the lock removes #sdc-app
+        const pop = el('div', 'sdc-modal sdc-album-pop');
+        pop.tabIndex = -1; // takes focus on open, so Esc and screen readers land here
+        pop.setAttribute('role', 'dialog');
+        pop.setAttribute('aria-modal', 'true');
+        const box = el('div', 'sdc-modal-content sdc-album-pop-content');
+        const bar = el('div', 'sdc-modal-topbar');
+        bar.appendChild(el('h3', 'sdc-album-pop-title'));
+        const actions = el('div', 'sdc-modal-actions');
+        const openDay = el('button', 'button button-primary sdc-album-openday', 'Open day');
+        openDay.type = 'button';
+        const close = el('button', 'button sdc-album-close', 'Close');
+        close.type = 'button';
+        actions.appendChild(openDay);
+        actions.appendChild(close);
+        bar.appendChild(actions);
+        box.appendChild(bar);
+        box.appendChild(el('div', 'sdc-album-pop-body'));
+        pop.appendChild(box);
+        host.appendChild(pop);
+
+        close.addEventListener('click', closeAlbum);
+        openDay.addEventListener('click', () => {
+            const cb = albumOpts.onOpenDay;
+            const date = albumOpts.date;
+            closeAlbum();
+            if (cb) cb(date);
+        });
+        pop.addEventListener('click', e => { if (e.target === pop) closeAlbum(); });
+        return pop;
+    }
+
+    function openAlbum(photos, opts) {
+        if (!photos || !photos.length) return;
+        if (!albumPop || !albumPop.isConnected) albumPop = buildAlbum();
+        albumOpts = opts || {};
+        albumPop.querySelector('.sdc-album-pop-title').textContent = albumOpts.date ? 'Date: ' + albumOpts.date : 'Photos';
+        albumPop.querySelector('.sdc-album-openday').style.display = albumOpts.onOpenDay ? '' : 'none';
+        albumPop.style.display = 'block';
+        albumPop.scrollTop = 0;
+        // Built once the window is on screen, so the collage can measure its width.
+        renderCollage(albumPop.querySelector('.sdc-album-pop-body'), photos, { date: albumOpts.date, title: albumOpts.title || '' });
+        document.addEventListener('keydown', onAlbumKey, true);
+        albumPop.focus({ preventScroll: true });
+    }
+
+    function closeAlbum() {
+        if (!albumPop) return;
+        albumPop.style.display = 'none';
+        albumPop.querySelector('.sdc-album-pop-body').innerHTML = '';
+        document.removeEventListener('keydown', onAlbumKey, true);
+    }
+
+    window.sdcAlbum = { renderCollage: renderCollage, openViewer: openViewer, closeViewer: closeViewer, openAlbum: openAlbum, closeAlbum: closeAlbum, createEditor: createEditor };
 })();
