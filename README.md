@@ -10,6 +10,7 @@ Private calendar project (WordPress plugin, shortcode `[daily_calendar]`).
 - assets/sdc-lock.js – PIN lock screen + auto-lock
 - assets/sdc-sol.js – Sol chat panel
 - assets/sdc-style.css – CSS
+- assets/vendor/quill/ – Quill 2.0.3 text editor, bundled locally (same as TBT Notes, 6.8)
 - .github/workflows/deploy.yml – automatic upload to the website (not uploaded itself)
 
 ## Automatic deploy (since 6.1)
@@ -106,3 +107,15 @@ After uploading the files, open any wp-admin page once so the two chat tables ar
 - Requests use `store: false`. Per OpenAI's API data policy, API data is not used for training by
   default; abuse-monitoring logs may be kept up to 30 days.
 - Only what a question needs is sent: Sol requests specific dates/searches through its tools.
+
+## Saving and the text editor (6.8)
+- **SAVE** (was *Save Content*) saves and keeps the day window open, still in edit mode, so you can
+  go straight to *Previous* / *Next*. The button shows *SAVING…*, then a green *SAVED ✓*. The month
+  view updates its icons without reloading the page. *Cancel* after a save reloads the saved day.
+- The text boxes use **Quill 2.0.3** instead of CKEditor – the same editor as TBT Notes, bundled in
+  `assets/vendor/quill/` (no CDN). Toolbar: **bold**, *italic*, ~~strikethrough~~ and five
+  highlighters (blue, red, yellow, pink, green – the Notes colours, in the Notes order).
+- Shortcuts: Ctrl+B / Ctrl+I, **Alt+1…5** highlight colours, **Alt+0** removes a highlight. Select
+  text first, or pick a colour with nothing selected to type in that colour.
+- Highlights are stored as `<span class="sdc-hl-yellow">…</span>`. Old entries open unchanged:
+  bold, italic, lists, links, headings and quotes are kept; pasted colours and fonts are dropped.

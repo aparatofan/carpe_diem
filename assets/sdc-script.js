@@ -25,9 +25,13 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     // --- READING STREAK ---
     // Days with the reading box ticked, taken from the calendar data loaded at unlock.
     const readingDays = new Set();
-    masterEvents.forEach(evt => {
-        if (evt.extendedProps && evt.extendedProps.reading) readingDays.add(String(evt.start).slice(0, 10));
-    });
+    function rebuildReadingDays() {
+        readingDays.clear();
+        masterEvents.forEach(evt => {
+            if (evt.extendedProps && evt.extendedProps.reading) readingDays.add(String(evt.start).slice(0, 10));
+        });
+    }
+    rebuildReadingDays();
     function shiftDate(dateStr, days) {
         const t = new Date(dateStr + 'T12:00:00Z');
         t.setUTCDate(t.getUTCDate() + days);
@@ -113,6 +117,15 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     function refreshCalendarEvents() {
         calendar.removeAllEvents();
         calendar.addEventSource(getFilteredEvents());
+    }
+
+    // After a save the server sends the whole calendar again; swap it in
+    // without reloading the page (the day window stays open).
+    function replaceCalendarEvents(events) {
+        masterEvents.length = 0;
+        events.forEach(e => masterEvents.push(e));
+        rebuildReadingDays();
+        refreshCalendarEvents();
     }
 
     // --- CSV EXPORT LOGIC ---
@@ -221,7 +234,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         window.sdcAlbum.openViewer(photos, 0, { date: dateStr, onOpenDay: d => openModalForDate(d, 'standard') });
     }
 
-    // --- MODAL & CKEDITOR LOGIC ---
+    // --- MODAL & EDITOR LOGIC ---
 
     const modal = document.getElementById('sdc-modal');
     const closeBtn = document.querySelector('.sdc-close-btn');
@@ -283,7 +296,9 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     // --- WRITING STATE (used by the PIN lock) ---
     // "dirty" = something was typed/changed in the Day Content form and not saved yet.
     let dirty = false;
-    const markDirty = () => { dirty = true; };
+    let editVersion = 0; // goes up with every change, so a save knows if you kept typing meanwhile
+    let savedWhileEditing = false; // SAVE no longer closes the window; Cancel then reloads the saved day
+    const markDirty = () => { dirty = true; editVersion++; };
 
     const contentFormEl = document.getElementById('sdc-content-form');
     if (contentFormEl) {
@@ -443,42 +458,189 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
 
     if(editTopBtn) editTopBtn.addEventListener('click', showEdit);
     if(document.getElementById('sdc-btn-switch-to-edit')) document.getElementById('sdc-btn-switch-to-edit').addEventListener('click', showEdit);
-    if(document.getElementById('sdc-cancel-edit-btn')) document.getElementById('sdc-cancel-edit-btn').addEventListener('click', () => { dirty = false; showView(); });
+    if(document.getElementById('sdc-cancel-edit-btn')) document.getElementById('sdc-cancel-edit-btn').addEventListener('click', () => {
+        dirty = false;
+        // After a SAVE the read view is behind (photos, habits…), so load the day afresh.
+        if (savedWhileEditing) openModalForDate(document.getElementById('sdc_date_field').value, 'standard');
+        else showView();
+    });
 
-    // --- CKEDITOR HELPERS ---
+    // --- TEXT EDITORS (Quill 2 – the same editor as TBT Notes) ---
+    // Each .sdc-editor textarea gets a Quill editor with: bold, italic,
+    // strikethrough and five highlighter colours. The colours keep the order
+    // used in Notes, so Alt+1…5 mean the same colour in both places.
+    const HL_COLORS = [
+        { key: 'blue',   label: 'Blue' },
+        { key: 'red',    label: 'Red' },
+        { key: 'yellow', label: 'Yellow' },
+        { key: 'pink',   label: 'Pink' },
+        { key: 'green',  label: 'Green' }
+    ];
+    // Formats the editor keeps. Lists, links, headings and quotes are not on the
+    // toolbar but stay allowed, so older entries written in CKEditor keep them.
+    // Anything else (pasted colours, fonts, sizes) is dropped on paste.
+    const EDITOR_FORMATS = ['bold', 'italic', 'strike', 'underline', 'link', 'list', 'indent', 'header', 'blockquote', 'highlight'];
+
+    let highlightRegistered = false;
+    function registerHighlight() {
+        if (highlightRegistered || !window.Quill) return;
+        const Parchment = window.Quill.import('parchment');
+        // Stored as <span class="sdc-hl-yellow">…</span>.
+        window.Quill.register(new Parchment.ClassAttributor('highlight', 'sdc-hl', {
+            scope: Parchment.Scope.INLINE,
+            whitelist: HL_COLORS.map(c => c.key)
+        }), true);
+        highlightRegistered = true;
+    }
+
+    function buildEditorToolbar() {
+        const bar = document.createElement('div');
+        bar.className = 'sdc-rte-toolbar';
+        const group = () => { const g = document.createElement('span'); g.className = 'ql-formats'; bar.appendChild(g); return g; };
+        const button = (g, cls, title) => {
+            const b = document.createElement('button');
+            b.type = 'button'; // never submit the day form
+            b.className = cls;
+            b.title = title;
+            b.setAttribute('aria-label', title);
+            g.appendChild(b);
+            return b;
+        };
+        const g1 = group();
+        button(g1, 'ql-bold', 'Bold (Ctrl+B)');
+        button(g1, 'ql-italic', 'Italic (Ctrl+I)');
+        button(g1, 'ql-strike', 'Strikethrough');
+        const g2 = group();
+        g2.classList.add('sdc-hl-group');
+        HL_COLORS.forEach((c, i) => {
+            const b = button(g2, 'sdc-hl-btn', 'Highlight: ' + c.label + ' (Alt+' + (i + 1) + ')');
+            b.dataset.color = c.key;
+        });
+        const clear = button(g2, 'sdc-hl-clear', 'No highlight (Alt+0)');
+        clear.dataset.color = '';
+        clear.textContent = '✕';
+        return bar;
+    }
+
+    // Wraps one textarea in a Quill editor. Returns the small interface the rest
+    // of this file uses: getData / setData / updateSourceElement / destroy.
+    function createEditor(textarea) {
+        registerHighlight();
+        const wrap = document.createElement('div');
+        wrap.className = 'sdc-rte';
+        const bar = buildEditorToolbar();
+        const box = document.createElement('div');
+        wrap.appendChild(bar);
+        wrap.appendChild(box);
+        textarea.style.display = 'none';
+        textarea.insertAdjacentElement('afterend', wrap);
+
+        const quill = new window.Quill(box, {
+            theme: 'snow',
+            modules: { toolbar: bar },
+            formats: EDITOR_FORMATS
+        });
+
+        function setHtml(html) {
+            const delta = (html && String(html).trim()) ? quill.clipboard.convert({ html: String(html) }) : [];
+            quill.setContents(delta, 'silent');
+            quill.history.clear();
+        }
+
+        function getHtml() {
+            if (!quill.getText().trim()) return '';
+            // Quill 2.0.3 writes every space as &nbsp;, which would stop long
+            // lines from wrapping in the day view – turn them back into spaces.
+            // Empty lines keep a <br> so they still show as blank lines.
+            return quill.getSemanticHTML()
+                .replace(/&nbsp;/g, ' ')
+                .replace(/<p><\/p>/g, '<p><br></p>');
+        }
+
+        setHtml(textarea.value);
+
+        // Highlighting: with text selected, colour it (same colour again removes it);
+        // with nothing selected, the next words you type come out in that colour.
+        let lastRange = null;
+        function applyHighlight(color) {
+            const range = quill.getSelection() || lastRange;
+            if (!range) return;
+            if (range.length > 0) {
+                let value = color || false;
+                if (color && quill.getFormat(range.index, range.length).highlight === color) value = false;
+                quill.formatText(range.index, range.length, 'highlight', value, 'user');
+                quill.setSelection(range.index, range.length, 'silent');
+            } else {
+                quill.focus();
+                quill.setSelection(range.index, 0, 'silent');
+                quill.format('highlight', color || false, 'user');
+            }
+            syncSwatches();
+        }
+
+        const swatches = bar.querySelectorAll('.sdc-hl-btn, .sdc-hl-clear');
+        swatches.forEach(b => {
+            b.addEventListener('mousedown', e => e.preventDefault()); // keep the text selection
+            b.addEventListener('click', () => applyHighlight(b.dataset.color));
+        });
+        function syncSwatches() {
+            const range = quill.getSelection();
+            const current = range ? (quill.getFormat(range).highlight || '') : '';
+            swatches.forEach(b => b.classList.toggle('is-active', !!b.dataset.color && b.dataset.color === current));
+        }
+
+        // Alt+1…5 = colours, Alt+0 = no highlight. Keyed off the physical key, so
+        // it works whatever character Alt would type; Ctrl+Alt (AltGr) is left alone.
+        const shortcut = {};
+        HL_COLORS.forEach((c, i) => { shortcut['Digit' + (i + 1)] = c.key; shortcut['Numpad' + (i + 1)] = c.key; });
+        shortcut.Digit0 = ''; shortcut.Numpad0 = '';
+        quill.root.addEventListener('keydown', e => {
+            if (!e.altKey || e.ctrlKey || e.metaKey || !(e.code in shortcut)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            applyHighlight(shortcut[e.code]);
+        });
+
+        quill.on('selection-change', range => { if (range) lastRange = range; syncSwatches(); });
+        quill.on('text-change', (delta, old, source) => {
+            syncSwatches();
+            if (source !== 'user') return;
+            // Typing in the editor counts as unsaved writing.
+            markDirty();
+            if (window.sdcLock.activity) window.sdcLock.activity();
+        });
+
+        return {
+            quill: quill,
+            getData: getHtml,
+            setData: setHtml,
+            updateSourceElement: () => { textarea.value = getHtml(); },
+            destroy: () => {
+                textarea.value = getHtml();
+                wrap.remove();
+                textarea.style.display = '';
+                return Promise.resolve();
+            }
+        };
+    }
+
     let editorsPromise = Promise.resolve();
-    let editorsCreating = false;
     const editorsReady = () => editorsPromise;
 
     function initEditors() {
-        if (Object.keys(editors).length > 0 || editorsCreating) return editorsPromise;
-        editorsCreating = true;
-        const creating = [];
-        const textareas = document.querySelectorAll('.sdc-editor');
-        textareas.forEach(el => {
-            if(!editors[el.id]) {
-                creating.push(ClassicEditor
-                    .create(el, { toolbar: [ 'bold', 'italic', '|', 'undo', 'redo' ] })
-                    .then(editor => {
-                        editors[el.id] = editor;
-                        // Typing in the editor counts as unsaved writing.
-                        editor.model.document.on('change:data', () => {
-                            markDirty();
-                            if (window.sdcLock.activity) window.sdcLock.activity();
-                        });
-                    })
-                    .catch(error => { console.error(error); }));
-            }
+        if (Object.keys(editors).length > 0) return editorsPromise;
+        if (!window.Quill) { console.error('Carpe Diem: the text editor did not load.'); return editorsPromise; }
+        document.querySelectorAll('.sdc-editor').forEach(el => {
+            try { editors[el.id] = createEditor(el); }
+            catch (error) { console.error(error); }
         });
-        editorsPromise = Promise.all(creating).then(() => { editorsCreating = false; });
         return editorsPromise;
     }
 
     function destroyEditors() {
         for (const id in editors) {
-            if (editors[id]) {
-                editors[id].destroy().then(() => { delete editors[id]; });
-            }
+            if (editors[id]) editors[id].destroy();
+            delete editors[id];
         }
     }
 
@@ -774,213 +936,227 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         // Reset deletion trackers
         deletedBookIds = [];
         deletedSeriesIds = [];
+        savedWhileEditing = false;
 
         jQuery.ajax({
             url: sdcVars.ajax_url, type: 'POST',
             data: { action: 'sdc_get_content', security: sdcVars.nonce, date: dateStr },
             success: function(res) {
                 loading.style.display = 'none';
-                if(res.success) {
-
-                    // A. Render Holidays
-                    holidayDisplay.innerHTML = '';
-                    if(res.data.holidays && res.data.holidays.length > 0) {
-                        res.data.holidays.forEach(h => {
-                            const card = document.createElement('div');
-                            card.className = 'sdc-holiday-card';
-                            let imgHtml = h.image_url ? '<img src=\"'+h.image_url+'\">' : '';
-                            card.innerHTML = imgHtml + '<h3>'+h.title+'</h3><div class=\"sdc-holiday-dates\">📅 '+h.start_date+' to '+h.end_date+'</div>';
-                            holidayDisplay.appendChild(card);
-                        });
-                    }
-
-                    // A2. Render Events
-                    if(eventDisplay) {
-                        eventDisplay.innerHTML = '';
-                        if(res.data.events && res.data.events.length > 0) {
-                            res.data.events.forEach(ev => {
-                                const card = document.createElement('div');
-                                card.className = 'sdc-event-card';
-                                let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\">' : '';
-                                card.innerHTML = imgHtml + '<h3>'+ev.title+'</h3><div class=\"sdc-event-dates\">📅 '+ev.start_date+' to '+ev.end_date+'</div>';
-                                eventDisplay.appendChild(card);
-                            });
-                        }
-                    }
-
-                    // B. Populate books/films/series rows for edit mode
-                    const booksContainer = document.getElementById('sdc-books-rows');
-                    const filmsContainer = document.getElementById('sdc-films-rows');
-                    const seriesContainer = document.getElementById('sdc-series-rows');
-
-                    if (booksContainer) booksContainer.innerHTML = '';
-                    if (filmsContainer) filmsContainer.innerHTML = '';
-                    if (seriesContainer) seriesContainer.innerHTML = '';
-
-                    if (res.data.books_active && res.data.books_active.length > 0) {
-                        res.data.books_active.forEach(b => addBookRow(b));
-                    }
-                    if (res.data.films && res.data.films.length > 0) {
-                        res.data.films.forEach(f => addFilmRow(f));
-                    }
-                    if (res.data.series_active && res.data.series_active.length > 0) {
-                        res.data.series_active.forEach(s => addSeriesRow(s));
-                    }
-
-                    // C. Populate view mode for books/films/series
-                    renderBooksView(res.data.books_view, dateStr);
-                    renderFilmsView(res.data.films);
-                    renderSeriesView(res.data.series_view, dateStr);
-
-                    // D. Fill Daily Content
-                    if(res.data.has_content) {
-                        const d = res.data.data;
-                        const dayPhotos = d.photos_list || [];
-                        if (dayPhotos.length && window.sdcAlbum) {
-                            viewImageWrapper.style.display = 'block';
-                            // Render once the view is visible, so the collage can measure its width.
-                            requestAnimationFrame(() => window.sdcAlbum.renderCollage(viewImageWrapper, dayPhotos, { date: dateStr, title: d.album_title || '' }));
-                        } else {
-                            viewImageWrapper.style.display = 'none';
-                            viewImageWrapper.innerHTML = '';
-                        }
-
-                        const setTxt = (id, val) => {
-                            const el = document.getElementById(id);
-                            if(val) { el.innerHTML = val; } else { el.textContent = '-'; }
-                        };
-
-                        setTxt('view_highlights', d.highlights);
-                        setTxt('view_daily_text', d.daily_text);
-                        setTxt('view_talking_head', d.talking_head);
-                        setTxt('view_podcasts', d.podcasts);
-                        setTxt('view_lessons', d.lessons);
-                        setTxt('view_posts_entries', d.posts_entries);
-
-                        // Legacy book/film content fallback (show old data if no new table data)
-                        if ((!res.data.books_view || res.data.books_view.length === 0) && d.books) {
-                            document.getElementById('view_books').innerHTML = d.books;
-                        }
-                        if ((!res.data.films || res.data.films.length === 0) && d.films) {
-                            let filmHtml = d.films;
-                            if (d.films_rating !== null && d.films_rating !== '') {
-                                filmHtml += ' <span class="sdc-view-item-rating">(' + d.films_rating + '/6)</span>';
-                            }
-                            document.getElementById('view_films').innerHTML = filmHtml;
-                        }
-
-                        const weightEl = document.getElementById('view_weight_container');
-                        if(d.weight && d.weight > 0) {
-                            weightEl.textContent = '⚖️ ' + d.weight + ' kg';
-                        } else {
-                            weightEl.textContent = '';
-                        }
-
-                        let habitHtml = '';
-                        habitHtml += (d.ykw == 1 ? '✅ YKW ' : '⬜ YKW ');
-                        habitHtml += '<span style=\"margin-left:15px;\"></span>';
-                        habitHtml += (d.sport == 1 ? '✅ SPORT ' : '⬜ SPORT ');
-                        habitHtml += '<span style=\"margin-left:15px;\"></span>';
-                        habitHtml += (d.shower == 1 ? '✅ SHOWER' : '⬜ SHOWER');
-                        habitHtml += '<span style=\"margin-left:15px;\"></span>';
-                        habitHtml += (d.reading == 1 ? '✅ READING' : '⬜ READING');
-                        const viewStreak = readingStreakAt(dateStr, d.reading == 1);
-                        if (viewStreak >= 2) habitHtml += ' <span class=\"sdc-streak\">🔥 ' + viewStreak + ' days</span>';
-                        document.getElementById('view_habits').innerHTML = habitHtml;
-
-                        if (photoEditor) photoEditor.set(d.photos_list || []);
-                        document.getElementById('sdc_album_title').value = d.album_title || '';
-
-                        document.getElementById('sdc_weight').value = d.weight || '';
-
-                        document.getElementById('sdc_ykw').checked = (d.ykw == 1);
-                        document.getElementById('sdc_sport').checked = (d.sport == 1);
-                        document.getElementById('sdc_shower').checked = (d.shower == 1);
-                        document.getElementById('sdc_reading').checked = (d.reading == 1);
-
-                        const textFields = ['highlights','daily_text','talking_head','podcasts','lessons','posts_entries'];
-                        textFields.forEach(f => {
-                            document.getElementById('sdc_' + f).value = d[f] || '';
-                        });
-
-                        showView();
-                    } else {
-                        document.getElementById('sdc-content-form').reset();
-                        for (const id in editors) { if(editors[id]) editors[id].setData(''); }
-                        if (photoEditor) photoEditor.set([]);
-                        viewImageWrapper.style.display = 'none';
-                        viewImageWrapper.innerHTML = '';
-                        document.getElementById('sdc_date_field').value = dateStr;
-                        document.getElementById('view_weight_container').textContent = '';
-                        showEdit();
-                    }
-
-                    updateReadingStreak();
-
-                    // E. Manage Holidays List
-                    holidayList.innerHTML = '';
-                    if(res.data.holidays && res.data.holidays.length > 0) {
-                        res.data.holidays.forEach(h => {
-                            const li = document.createElement('li');
-                            let imgHtml = h.image_url ? '<img src=\"'+h.image_url+'\" style=\"max-height:100px; display:block; margin-bottom:5px;\">' : '';
-                            let deleteLink = (mode === 'standard') ? ' <a href=\"#\" class=\"sdc-del-holiday\" data-id=\"'+h.id+'\" style=\"color:red; float:right;\">[Delete]</a>' : '';
-                            li.innerHTML = '<div class=\"sdc-holiday-card\" style=\"margin-bottom:10px;\">' + imgHtml + '<strong>' + h.title + '</strong>' + deleteLink + '<br><span style=\"font-size:0.9em; color:#666;\">(' + h.start_date + ' to ' + h.end_date + ')</span></div>';
-                            holidayList.appendChild(li);
-                        });
-                        if(mode === 'standard') {
-                            document.querySelectorAll('.sdc-del-holiday').forEach(btn => {
-                                btn.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    if(confirm('Delete holiday?')) {
-                                        jQuery.ajax({
-                                            url: sdcVars.ajax_url, type: 'POST',
-                                            data: { action: 'sdc_delete_holiday', security: sdcVars.nonce, id: this.dataset.id },
-                                            success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
-                                        });
-                                    }
-                                });
-                            });
-                        }
-                    } else {
-                        holidayList.innerHTML = '<li>No holidays set for this period.</li>';
-                    }
-
-                    // E2. Manage Events List
-                    if(eventList) {
-                        eventList.innerHTML = '';
-                        if(res.data.events && res.data.events.length > 0) {
-                            res.data.events.forEach(ev => {
-                                const li = document.createElement('li');
-                                let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\" style=\"max-height:100px; display:block; margin-bottom:5px;\">' : '';
-                                let deleteLink = (mode === 'standard') ? ' <a href=\"#\" class=\"sdc-del-event\" data-id=\"'+ev.id+'\" style=\"color:red; float:right;\">[Delete]</a>' : '';
-                                li.innerHTML = '<div class=\"sdc-event-card\" style=\"margin-bottom:10px;\">' + imgHtml + '<strong>' + ev.title + '</strong>' + deleteLink + '<br><span style=\"font-size:0.9em; color:#666;\">(' + ev.start_date + ' to ' + ev.end_date + ')</span></div>';
-                                eventList.appendChild(li);
-                            });
-                            if(mode === 'standard') {
-                                document.querySelectorAll('.sdc-del-event').forEach(btn => {
-                                    btn.addEventListener('click', function(e) {
-                                        e.preventDefault();
-                                        if(confirm('Delete event?')) {
-                                            jQuery.ajax({
-                                                url: sdcVars.ajax_url, type: 'POST',
-                                                data: { action: 'sdc_delete_event', security: sdcVars.nonce, id: this.dataset.id },
-                                                success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
-                                            });
-                                        }
-                                    });
-                                });
-                            }
-                        } else {
-                            eventList.innerHTML = '<li>No events set for this period.</li>';
-                        }
-                    }
-
-                    // F. Loading the day is not "writing"; a restored draft is.
-                    dirty = false;
-                    if (draft) applyDraft(draft);
-                }
+                if (res.success) renderDay(res.data, dateStr, mode, draft, false);
             }
         });
+    }
+
+    // Fills the day window from sdc_get_content data.
+    // keepEditing = true is the quiet refresh after SAVE: book/series rows get
+    // their new ids and the read view is brought up to date, while the text
+    // editors, habits, photos and the edit mode you are in stay exactly as they are.
+    function renderDay(data, dateStr, mode, draft, keepEditing) {
+
+        // A. Render Holidays
+        holidayDisplay.innerHTML = '';
+        if(data.holidays && data.holidays.length > 0) {
+            data.holidays.forEach(h => {
+                const card = document.createElement('div');
+                card.className = 'sdc-holiday-card';
+                let imgHtml = h.image_url ? '<img src=\"'+h.image_url+'\">' : '';
+                card.innerHTML = imgHtml + '<h3>'+h.title+'</h3><div class=\"sdc-holiday-dates\">📅 '+h.start_date+' to '+h.end_date+'</div>';
+                holidayDisplay.appendChild(card);
+            });
+        }
+
+        // A2. Render Events
+        if(eventDisplay) {
+            eventDisplay.innerHTML = '';
+            if(data.events && data.events.length > 0) {
+                data.events.forEach(ev => {
+                    const card = document.createElement('div');
+                    card.className = 'sdc-event-card';
+                    let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\">' : '';
+                    card.innerHTML = imgHtml + '<h3>'+ev.title+'</h3><div class=\"sdc-event-dates\">📅 '+ev.start_date+' to '+ev.end_date+'</div>';
+                    eventDisplay.appendChild(card);
+                });
+            }
+        }
+
+        // B. Populate books/films/series rows for edit mode
+        const booksContainer = document.getElementById('sdc-books-rows');
+        const filmsContainer = document.getElementById('sdc-films-rows');
+        const seriesContainer = document.getElementById('sdc-series-rows');
+
+        if (booksContainer) booksContainer.innerHTML = '';
+        if (filmsContainer) filmsContainer.innerHTML = '';
+        if (seriesContainer) seriesContainer.innerHTML = '';
+
+        if (data.books_active && data.books_active.length > 0) {
+            data.books_active.forEach(b => addBookRow(b));
+        }
+        if (data.films && data.films.length > 0) {
+            data.films.forEach(f => addFilmRow(f));
+        }
+        if (data.series_active && data.series_active.length > 0) {
+            data.series_active.forEach(s => addSeriesRow(s));
+        }
+
+        // C. Populate view mode for books/films/series
+        renderBooksView(data.books_view, dateStr);
+        renderFilmsView(data.films);
+        renderSeriesView(data.series_view, dateStr);
+
+        // D. Fill Daily Content
+        if(data.has_content) {
+            const d = data.data;
+            const dayPhotos = d.photos_list || [];
+            // (The collage needs the read view on screen to measure itself, so the
+            // after-save refresh leaves it alone; leaving edit mode reloads the day.)
+            if (keepEditing) {
+                // nothing – see above
+            } else if (dayPhotos.length && window.sdcAlbum) {
+                viewImageWrapper.style.display = 'block';
+                // Render once the view is visible, so the collage can measure its width.
+                requestAnimationFrame(() => window.sdcAlbum.renderCollage(viewImageWrapper, dayPhotos, { date: dateStr, title: d.album_title || '' }));
+            } else {
+                viewImageWrapper.style.display = 'none';
+                viewImageWrapper.innerHTML = '';
+            }
+
+            const setTxt = (id, val) => {
+                const el = document.getElementById(id);
+                if(val) { el.innerHTML = val; } else { el.textContent = '-'; }
+            };
+
+            setTxt('view_highlights', d.highlights);
+            setTxt('view_daily_text', d.daily_text);
+            setTxt('view_talking_head', d.talking_head);
+            setTxt('view_podcasts', d.podcasts);
+            setTxt('view_lessons', d.lessons);
+            setTxt('view_posts_entries', d.posts_entries);
+
+            // Legacy book/film content fallback (show old data if no new table data)
+            if ((!data.books_view || data.books_view.length === 0) && d.books) {
+                document.getElementById('view_books').innerHTML = d.books;
+            }
+            if ((!data.films || data.films.length === 0) && d.films) {
+                let filmHtml = d.films;
+                if (d.films_rating !== null && d.films_rating !== '') {
+                    filmHtml += ' <span class="sdc-view-item-rating">(' + d.films_rating + '/6)</span>';
+                }
+                document.getElementById('view_films').innerHTML = filmHtml;
+            }
+
+            const weightEl = document.getElementById('view_weight_container');
+            if(d.weight && d.weight > 0) {
+                weightEl.textContent = '⚖️ ' + d.weight + ' kg';
+            } else {
+                weightEl.textContent = '';
+            }
+
+            let habitHtml = '';
+            habitHtml += (d.ykw == 1 ? '✅ YKW ' : '⬜ YKW ');
+            habitHtml += '<span style=\"margin-left:15px;\"></span>';
+            habitHtml += (d.sport == 1 ? '✅ SPORT ' : '⬜ SPORT ');
+            habitHtml += '<span style=\"margin-left:15px;\"></span>';
+            habitHtml += (d.shower == 1 ? '✅ SHOWER' : '⬜ SHOWER');
+            habitHtml += '<span style=\"margin-left:15px;\"></span>';
+            habitHtml += (d.reading == 1 ? '✅ READING' : '⬜ READING');
+            const viewStreak = readingStreakAt(dateStr, d.reading == 1);
+            if (viewStreak >= 2) habitHtml += ' <span class=\"sdc-streak\">🔥 ' + viewStreak + ' days</span>';
+            document.getElementById('view_habits').innerHTML = habitHtml;
+
+            if (!keepEditing) {
+                if (photoEditor) photoEditor.set(d.photos_list || []);
+                document.getElementById('sdc_album_title').value = d.album_title || '';
+
+                document.getElementById('sdc_weight').value = d.weight || '';
+
+                document.getElementById('sdc_ykw').checked = (d.ykw == 1);
+                document.getElementById('sdc_sport').checked = (d.sport == 1);
+                document.getElementById('sdc_shower').checked = (d.shower == 1);
+                document.getElementById('sdc_reading').checked = (d.reading == 1);
+
+                const textFields = ['highlights','daily_text','talking_head','podcasts','lessons','posts_entries'];
+                textFields.forEach(f => {
+                    document.getElementById('sdc_' + f).value = d[f] || '';
+                });
+
+                showView();
+            }
+        } else if (!keepEditing) {
+            document.getElementById('sdc-content-form').reset();
+            for (const id in editors) { if(editors[id]) editors[id].setData(''); }
+            if (photoEditor) photoEditor.set([]);
+            viewImageWrapper.style.display = 'none';
+            viewImageWrapper.innerHTML = '';
+            document.getElementById('sdc_date_field').value = dateStr;
+            document.getElementById('view_weight_container').textContent = '';
+            showEdit();
+        }
+
+        if (!keepEditing) updateReadingStreak();
+
+        // E. Manage Holidays List
+        holidayList.innerHTML = '';
+        if(data.holidays && data.holidays.length > 0) {
+            data.holidays.forEach(h => {
+                const li = document.createElement('li');
+                let imgHtml = h.image_url ? '<img src=\"'+h.image_url+'\" style=\"max-height:100px; display:block; margin-bottom:5px;\">' : '';
+                let deleteLink = (mode === 'standard') ? ' <a href=\"#\" class=\"sdc-del-holiday\" data-id=\"'+h.id+'\" style=\"color:red; float:right;\">[Delete]</a>' : '';
+                li.innerHTML = '<div class=\"sdc-holiday-card\" style=\"margin-bottom:10px;\">' + imgHtml + '<strong>' + h.title + '</strong>' + deleteLink + '<br><span style=\"font-size:0.9em; color:#666;\">(' + h.start_date + ' to ' + h.end_date + ')</span></div>';
+                holidayList.appendChild(li);
+            });
+            if(mode === 'standard') {
+                document.querySelectorAll('.sdc-del-holiday').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        if(confirm('Delete holiday?')) {
+                            jQuery.ajax({
+                                url: sdcVars.ajax_url, type: 'POST',
+                                data: { action: 'sdc_delete_holiday', security: sdcVars.nonce, id: this.dataset.id },
+                                success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
+                            });
+                        }
+                    });
+                });
+            }
+        } else {
+            holidayList.innerHTML = '<li>No holidays set for this period.</li>';
+        }
+
+        // E2. Manage Events List
+        if(eventList) {
+            eventList.innerHTML = '';
+            if(data.events && data.events.length > 0) {
+                data.events.forEach(ev => {
+                    const li = document.createElement('li');
+                    let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\" style=\"max-height:100px; display:block; margin-bottom:5px;\">' : '';
+                    let deleteLink = (mode === 'standard') ? ' <a href=\"#\" class=\"sdc-del-event\" data-id=\"'+ev.id+'\" style=\"color:red; float:right;\">[Delete]</a>' : '';
+                    li.innerHTML = '<div class=\"sdc-event-card\" style=\"margin-bottom:10px;\">' + imgHtml + '<strong>' + ev.title + '</strong>' + deleteLink + '<br><span style=\"font-size:0.9em; color:#666;\">(' + ev.start_date + ' to ' + ev.end_date + ')</span></div>';
+                    eventList.appendChild(li);
+                });
+                if(mode === 'standard') {
+                    document.querySelectorAll('.sdc-del-event').forEach(btn => {
+                        btn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            if(confirm('Delete event?')) {
+                                jQuery.ajax({
+                                    url: sdcVars.ajax_url, type: 'POST',
+                                    data: { action: 'sdc_delete_event', security: sdcVars.nonce, id: this.dataset.id },
+                                    success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
+                                });
+                            }
+                        });
+                    });
+                }
+            } else {
+                eventList.innerHTML = '<li>No events set for this period.</li>';
+            }
+        }
+
+        // F. Loading the day is not "writing"; a restored draft is.
+        if (keepEditing) return;
+        dirty = false;
+        if (draft) applyDraft(draft);
     }
 
     // Kalendarz locked while you were writing? Bring that text back.
@@ -989,6 +1165,18 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     }
 
     // --- SAVE HANDLERS ---
+    const saveBtnEl = document.getElementById('sdc-save-btn');
+    let saving = false;
+    let saveFlashTimer = null;
+    function setSaveState(state) {
+        if (!saveBtnEl) return;
+        clearTimeout(saveFlashTimer);
+        saveBtnEl.disabled = (state === 'saving');
+        saveBtnEl.classList.toggle('is-saved', state === 'saved');
+        saveBtnEl.textContent = state === 'saving' ? 'SAVING…' : (state === 'saved' ? 'SAVED ✓' : 'SAVE');
+        if (state === 'saved') saveFlashTimer = setTimeout(() => setSaveState(''), 1800);
+    }
+
     const contentForm = document.getElementById('sdc-content-form');
     if(contentForm) {
         contentForm.addEventListener('submit', function(e) {
@@ -1054,6 +1242,12 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                 }
             }
 
+            if (saving) return; // one save at a time
+            const sentBookDeletes = deletedBookIds.slice();
+            const sentSeriesDeletes = deletedSeriesIds.slice();
+            const versionAtSave = editVersion;
+            const dateAtSave = document.getElementById('sdc_date_field').value;
+
             const fd = new FormData(contentForm);
             fd.append('action', 'sdc_save_content');
             fd.append('security', sdcVars.nonce);
@@ -1063,13 +1257,47 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             fd.append('deleted_books', JSON.stringify(deletedBookIds));
             fd.append('deleted_series', JSON.stringify(deletedSeriesIds));
 
+            saving = true;
+            setSaveState('saving');
             jQuery.ajax({
                 url: sdcVars.ajax_url, type: 'POST', data: fd, processData: false, contentType: false,
                 success: function(res) {
-                    if(res.success) { location.reload(); }
-                    else { alert(res.data); }
+                    saving = false;
+                    if (!res || !res.success) {
+                        setSaveState('');
+                        alert(res && res.data ? res.data : 'Could not save.');
+                        return;
+                    }
+                    // Saved. The window stays open, in edit mode, where you were.
+                    setSaveState('saved');
+                    savedWhileEditing = true;
+                    if (editVersion === versionAtSave) dirty = false; // still dirty if you typed meanwhile
+                    deletedBookIds = deletedBookIds.filter(id => !sentBookDeletes.includes(id));
+                    deletedSeriesIds = deletedSeriesIds.filter(id => !sentSeriesDeletes.includes(id));
+                    if (draftBanner) draftBanner.style.display = 'none';
+                    // Month view: new icons / photo thumbnail for this day.
+                    if (res.data && Array.isArray(res.data.events)) replaceCalendarEvents(res.data.events);
+                    refreshDayAfterSave(dateAtSave);
+                },
+                error: function() {
+                    saving = false;
+                    setSaveState('');
+                    alert('Could not save – check the connection and try again. Your text is still here.');
                 }
             });
+        });
+    }
+
+    // New books/series get their database ids only on the server, so fetch the
+    // day again quietly; otherwise a second SAVE would add them twice.
+    function refreshDayAfterSave(dateStr) {
+        jQuery.ajax({
+            url: sdcVars.ajax_url, type: 'POST',
+            data: { action: 'sdc_get_content', security: sdcVars.nonce, date: dateStr },
+            success: function(res) {
+                const stillHere = modal.style.display !== 'none' && document.getElementById('sdc_date_field').value === dateStr;
+                if (res && res.success && stillHere) renderDay(res.data, dateStr, 'standard', null, true);
+            }
         });
     }
 
