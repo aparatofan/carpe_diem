@@ -895,7 +895,7 @@ html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }
     inset: 0;
     z-index: 10000000;
     flex-direction: column;
-    background: rgba(14,14,13,.97);
+    background: #0e0e0d;   /* solid: nothing of the page shows through the frame */
     color: #f2f1ed;
     font-family: var(--sdc-display);
 }
@@ -940,7 +940,7 @@ html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 70px;
+    padding: 28px 70px;   /* black frame above and below the photo, too */
 }
 .sdc-viewer-figure {
     margin: 0;
@@ -957,11 +957,11 @@ html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }
 .sdc-viewer-figure img {
     display: block;
     max-width: 100%;
-    max-height: calc(100vh - 210px);
+    max-height: calc(100vh - 270px);
     object-fit: contain;
     box-shadow: 0 20px 60px rgba(0,0,0,.5);
 }
-.sdc-viewer.is-single .sdc-viewer-figure img { max-height: calc(100vh - 130px); }
+.sdc-viewer.is-single .sdc-viewer-figure img { max-height: calc(100vh - 190px); }
 .sdc-viewer-caption {
     margin-top: 14px;
     max-width: 680px;
@@ -1012,7 +1012,7 @@ html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }
 .sdc-viewer-thumb:hover { opacity: .85; }
 .sdc-viewer-thumb.is-active { opacity: 1; outline-color: var(--sdc-accent); }
 @media (max-width: 600px) {
-    .sdc-viewer-stage { padding: 0 8px; }
+    .sdc-viewer-stage { padding: 16px 12px; }
     .sdc-viewer-nav { display: none; }
     .sdc-viewer-top { grid-template-columns: 1fr auto; }
     .sdc-viewer-date { display: none; }
