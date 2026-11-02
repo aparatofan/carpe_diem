@@ -205,9 +205,18 @@
         // ---- layout (needs the real width) ----
         let raf = 0;
         function scheduleLayout() { cancelAnimationFrame(raf); raf = requestAnimationFrame(layout); }
+        // Shake guard (6.9.1): a taller collage can make the window show a scrollbar,
+        // which makes the grid narrower; the narrower layout can then be short enough
+        // for the scrollbar to vanish – and round it goes. When the width flips
+        // straight back to the one before (a scrollbar's worth), keep the narrower
+        // layout, which fits either way. A real window resize gives new widths.
+        let lastW = 0, prevW = 0;
         function layout() {
             const width = grid.clientWidth;
             if (!width) return;
+            if (width === prevW && width > lastW && width - lastW <= 40) return;
+            prevW = lastW;
+            lastW = width;
             const cols = width < 560 ? 6 : 12;
             const S = SIZES[cols];
             const gap = cols === 12 ? 10 : 6;
