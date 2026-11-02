@@ -1201,3 +1201,23 @@ html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }
     color: #fff !important;
     border-color: #16a34a !important;
 }
+
+/* ===================================================================
+   Album window (6.9) – the collage opened from the month-view thumbnail.
+   Uses the day window's frame (.sdc-modal / .sdc-modal-topbar).
+   =================================================================== */
+.sdc-album-pop .sdc-album-pop-title {
+    margin: 0;
+    padding: 0;
+    color: #fff;
+    font-size: 46px;
+    font-family: 'Iowan Old Style', serif;
+    font-weight: 400;
+    line-height: 1.2;
+}
+.sdc-album-pop-body { padding: 20px; }
+.sdc-album-pop:focus { outline: none; }
+@media (max-width: 600px) {
+    .sdc-album-pop .sdc-album-pop-title { font-size: 28px; }
+    .sdc-album-pop-body { padding: 12px; }
+}

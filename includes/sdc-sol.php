@@ -128,7 +128,7 @@ HOW YOU TALK
 - Use light structure (short paragraphs, occasional bullet points) only when it helps.
 
 HOW YOU USE HIS DATA
-- His calendar holds daily entries: daily text (diary), highlights, "talking head" notes, podcasts & documentaries, books, films, series (with 0–6 ratings), Blue Tree lessons, posts & Enchiridion entries, habit check-boxes (YKW, sport, shower, reading – he is building a daily reading habit, even a few pages a day), weight in kg, holidays and events.
+- His calendar holds daily entries: daily text (diary), highlights, "talking head" notes, podcasts & documentaries, books, films, series (with 0–6 ratings), Blue Tree lessons, posts & Enchiridion entries, habit check-boxes (YKW, sport, shower, reading – he is building a daily reading habit, even a few pages a day; ministry – days he went out in the ministry as one of Jehovah's Witnesses, which he counts), weight in kg, holidays and events.
 - Before making a claim about his life, look at the entries with your tools. Mention dates so he can check ("on 3 October you wrote…"). Never invent entries; if the data isn't there, say so.
 - Don't guess the meaning of private labels such as "YKW" – ask if you need to know.
 - Fetch only what a question needs; prefer narrow date ranges and searches.
@@ -451,7 +451,7 @@ TXT;
 		};
 		return array(
 			$fn( 'get_overview', 'Overview of the whole calendar: first and last entry dates, number of days with entries, totals of books/films/series, currently active books and series. Good first step for broad questions.', array(), array() ),
-			$fn( 'get_entries', 'Full entries for a date range (max ' . self::MAX_RANGE_DAYS . ' days): diary text, highlights, talking head, podcasts, lessons, posts, habits (YKW/sport/shower/reading), weight, photo album title and photo captions, films watched, books/series started or finished, holidays and events.', array(
+			$fn( 'get_entries', 'Full entries for a date range (max ' . self::MAX_RANGE_DAYS . ' days): diary text, highlights, talking head, podcasts, lessons, posts, habits (YKW/sport/shower/reading/ministry), weight, photo album title and photo captions, films watched, books/series started or finished, holidays and events.', array(
 				'start_date' => $date,
 				'end_date'   => $date,
 			), array( 'start_date', 'end_date' ) ),
@@ -465,7 +465,7 @@ TXT;
 				'start_date' => $odate,
 				'end_date'   => $odate,
 			), array( 'kind', 'start_date', 'end_date' ) ),
-			$fn( 'get_stats', 'Numbers for a date range: days with entries, habit counts (YKW, sport, shower, reading) and the current reading streak, weight (first, last, min, max, average, weekly averages), films watched, books and series finished.', array(
+			$fn( 'get_stats', 'Numbers for a date range: days with entries, habit counts (YKW, sport, shower, reading, ministry) and the current reading streak, weight (first, last, min, max, average, weekly averages), films watched, books and series finished.', array(
 				'start_date' => $date,
 				'end_date'   => $date,
 			), array( 'start_date', 'end_date' ) ),
@@ -582,7 +582,7 @@ TXT;
 		foreach ( (array) $rows as $r ) {
 			$d = $day( $r['event_date'] );
 			$habits = array();
-			foreach ( array( 'ykw' => 'YKW', 'sport' => 'sport', 'shower' => 'shower', 'reading' => 'reading' ) as $k => $label ) {
+			foreach ( array( 'ykw' => 'YKW', 'sport' => 'sport', 'shower' => 'shower', 'reading' => 'reading', 'ministry' => 'ministry' ) as $k => $label ) {
 				if ( ! empty( $r[ $k ] ) ) $habits[] = $label;
 			}
 			$entry = array(
@@ -735,10 +735,10 @@ TXT;
 		global $wpdb;
 		$c = $this->t;
 		list( $s, $e ) = $this->range( $a, true );
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT event_date, ykw, sport, shower, reading, weight FROM {$c['content']} WHERE event_date >= %s AND event_date <= %s ORDER BY event_date", $s, $e ), ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT event_date, ykw, sport, shower, reading, ministry, weight FROM {$c['content']} WHERE event_date >= %s AND event_date <= %s ORDER BY event_date", $s, $e ), ARRAY_A );
 		$days_in_range = (int) round( ( strtotime( $e ) - strtotime( $s ) ) / DAY_IN_SECONDS ) + 1;
 
-		$h = array( 'ykw' => 0, 'sport' => 0, 'shower' => 0, 'reading' => 0 );
+		$h = array( 'ykw' => 0, 'sport' => 0, 'shower' => 0, 'reading' => 0, 'ministry' => 0 );
 		$w = array();
 		$weeks = array();
 		foreach ( (array) $rows as $r ) {

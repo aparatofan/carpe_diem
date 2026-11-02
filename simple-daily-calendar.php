@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.8
+ * Version: 6.9
  * Author: AI Assistant
  */
 
@@ -12,9 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.8';
+	const VERSION = '6.9';
 	// Bump when the database tables change; existing sites are upgraded automatically.
-	const DB_VERSION = '6.6';
+	const DB_VERSION = '6.9';
 	const OPT_DB_VERSION = 'sdc_db_version';
 
 	// --- PIN LOCK SETTINGS ---
@@ -358,7 +358,7 @@ class SimpleDailyCalendar {
 		foreach ( array( 'sdc_daily_text', 'sdc_highlights', 'sdc_talking_head', 'sdc_podcasts', 'sdc_lessons', 'sdc_posts_entries' ) as $k ) {
 			$fields[ $k ] = isset( $f[ $k ] ) ? wp_kses_post( (string) $f[ $k ] ) : '';
 		}
-		foreach ( array( 'sdc_ykw', 'sdc_sport', 'sdc_shower', 'sdc_reading' ) as $k ) {
+		foreach ( array( 'sdc_ykw', 'sdc_sport', 'sdc_shower', 'sdc_reading', 'sdc_ministry' ) as $k ) {
 			$fields[ $k ] = ! empty( $f[ $k ] );
 		}
 		$fields['sdc_weight']        = ( isset( $f['sdc_weight'] ) && is_numeric( $f['sdc_weight'] ) ) ? (string) floatval( $f['sdc_weight'] ) : '';
@@ -552,6 +552,7 @@ class SimpleDailyCalendar {
 			sport TINYINT(1) DEFAULT 0,
 			shower TINYINT(1) DEFAULT 0,
 			reading TINYINT(1) DEFAULT 0,
+			ministry TINYINT(1) DEFAULT 0,
 			weight FLOAT,
 			highlights TEXT,
 			daily_text LONGTEXT,
@@ -637,6 +638,7 @@ class SimpleDailyCalendar {
 			'reading'     => "reading TINYINT(1) DEFAULT 0 AFTER shower",        // 6.1
 			'album_title' => "album_title VARCHAR(255) DEFAULT '' AFTER image_caption", // 6.6
 			'photos'      => "photos LONGTEXT AFTER album_title",               // 6.6
+			'ministry'    => "ministry TINYINT(1) DEFAULT 0 AFTER reading",      // 6.9
 		);
 		$all_there = true;
 		foreach ( $columns as $name => $definition ) {
@@ -742,6 +744,7 @@ class SimpleDailyCalendar {
 			if ( ! empty( $row['weight'] ) ) $icons .= '⚖️ ';
 			if ( $row['shower'] == 1 ) $icons .= '🚿 ';
 			if ( ! empty( $row['reading'] ) ) $icons .= '👓 ';
+			if ( ! empty( $row['ministry'] ) ) $icons .= '👣 ';
 			if ( $row['sport'] == 1 )  $icons .= '🚴 ';
 			if ( $row['ykw'] == 1 )    $icons .= '🤫 ';
 			if ( ! empty( $row['highlights'] ) )    $icons .= '⭐ ';
@@ -763,6 +766,8 @@ class SimpleDailyCalendar {
 					'url'     => $p['url'],
 					'large'   => $p['large'] ? $p['large'] : $p['url'],
 					'thumb'   => $p['thumb'] ? $p['thumb'] : ( $p['large'] ? $p['large'] : $p['url'] ),
+					'w'       => $p['w'],
+					'h'       => $p['h'],
 					'caption' => $p['caption'],
 				);
 			}
@@ -782,6 +787,7 @@ class SimpleDailyCalendar {
 						'weight' => !empty($row['weight']),
 						'shower' => $row['shower'] == 1,
 						'reading' => ! empty( $row['reading'] ),
+						'ministry' => ! empty( $row['ministry'] ),
 						'sport'  => $row['sport'] == 1,
 						'ykw'    => $row['ykw'] == 1,
 						'highlights' => !empty($row['highlights']),
@@ -1012,7 +1018,9 @@ class SimpleDailyCalendar {
 									<label><input type="checkbox" id="sdc_sport" name="sdc_sport" value="1"> 🚴 SPORT</label> &nbsp;
 									<label><input type="checkbox" id="sdc_shower" name="sdc_shower" value="1"> 🚿 SHOWER</label> &nbsp;
 									<label title="Read today – even a few pages counts"><input type="checkbox" id="sdc_reading" name="sdc_reading" value="1"> 👓 READING</label>
-									<span id="sdc-reading-streak" class="sdc-streak"></span>
+									<span id="sdc-reading-streak" class="sdc-streak"></span> &nbsp;
+									<label title="Went out in the ministry today"><input type="checkbox" id="sdc_ministry" name="sdc_ministry" value="1"> 👣 MINISTRY</label>
+									<span id="sdc-ministry-count" class="sdc-streak"></span>
 								</div>
 								<div>
 									<label for="sdc_weight" style="font-weight:bold;">Weight (kg):</label>
@@ -1252,6 +1260,7 @@ class SimpleDailyCalendar {
 			'sport'        => isset($_POST['sdc_sport']) ? 1 : 0,
 			'shower'       => isset($_POST['sdc_shower']) ? 1 : 0,
 			'reading'      => isset($_POST['sdc_reading']) ? 1 : 0,
+			'ministry'     => isset($_POST['sdc_ministry']) ? 1 : 0,
 			'weight'       => ( isset($_POST['sdc_weight']) && $_POST['sdc_weight'] !== '' ) ? floatval($_POST['sdc_weight']) : null,
 			'highlights'   => wp_kses_post( wp_unslash($_POST['sdc_highlights']) ),
 			'daily_text'   => wp_kses_post( wp_unslash($_POST['sdc_daily_text']) ),
@@ -1467,7 +1476,7 @@ class SimpleDailyCalendar {
 		ksort( $all_dates );
 
 		$header = [
-			'Date', 'YKW', 'Sport', 'Shower', 'Reading', 'Weight',
+			'Date', 'YKW', 'Sport', 'Shower', 'Reading', 'Ministry', 'Weight',
 			'Highlights', 'Daily Text', 'Talking Head', 'Podcasts',
 			'Books', 'Films', 'Series', 'Lessons', 'Posts'
 		];
@@ -1546,6 +1555,7 @@ class SimpleDailyCalendar {
 				$row ? ($row['sport'] ? '1' : '0') : '0',
 				$row ? ($row['shower'] ? '1' : '0') : '0',
 				$row ? ( ! empty( $row['reading'] ) ? '1' : '0' ) : '0',
+				$row ? ( ! empty( $row['ministry'] ) ? '1' : '0' ) : '0',
 				$row ? $row['weight'] : '',
 				$row ? strip_tags( $row['highlights'] ) : '',
 				$row ? strip_tags( $row['daily_text'] ) : '',

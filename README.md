@@ -35,9 +35,13 @@ The action uploads but never deletes, so two names are fixed:
 Database changes (like the new reading column) are applied automatically on the next page load.
 
 ## Habits
-🤫 YKW · 🚴 Sport · 🚿 Shower · 👓 Reading (6.1). Reading shows a streak counter next to the
+🤫 YKW · 🚴 Sport · 🚿 Shower · 👓 Reading (6.1) · 👣 Ministry (6.9). Reading shows a streak counter next to the
 box (“Keep your 4-day streak going”) and in the day view; it's in the filter bar, the CSV
 export and Sol's statistics (`reading_streak`).
+
+Ministry (6.9) counts the days you went out in the ministry: next to the box and in the day view
+you see how many times that month (“👣 3× in November”). It has its own 👣 filter, a CSV column and
+is part of Sol's habit counts. New database column `ministry`, added automatically on the next page load.
 
 ## Photo albums (since 6.6)
 A day can hold many photos instead of one picture.
@@ -53,7 +57,8 @@ A day can hold many photos instead of one picture.
 - **Viewer:** click any photo – full screen, arrows / ← → keys / swipe, captions,
   thumbnail strip, Esc or swipe down to close.
 - **Month view:** a small round cover thumbnail with the number of photos; click it to
-  open the viewer.
+  open the album – the same collage as in the day view, in its own window, with *Open day*
+  (6.9; before, it opened only the first photo in the viewer).
 - **Storage:** JSON in the new `photos` column (plus `album_title`). `image_url` keeps the
   cover and `image_caption` all captions, so Sol reads and searches captions and album
   titles. Old single pictures show as one-photo albums – nothing to migrate.
