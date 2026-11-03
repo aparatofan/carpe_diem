@@ -25,14 +25,14 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     // --- HABIT NOTES (6.10) ---
     // Each habit gets a short note under its box, worked out from the
     // calendar data loaded at unlock:
-    //   since  – days since it was last ticked (YKW, sport)
+    //   since  – days since it was last ticked (YKW)
     //   streak – consecutive days (shower, reading)
-    //   month  – how many times this month (ministry)
+    //   month  – how many times this month (sport, ministry)
     const HABITS = {
         ykw:      { mode: 'since' },
-        sport:    { mode: 'since' },
-        shower:   { mode: 'streak', idle: 'Start a new streak' },
-        reading:  { mode: 'streak', idle: 'Even a few pages counts' },
+        sport:    { mode: 'month' },
+        shower:   { mode: 'streak' },
+        reading:  { mode: 'streak' },
         ministry: { mode: 'month' }
     };
     const habitDays = {};
@@ -86,8 +86,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         }
         if (h.mode === 'streak') {
             const n = streakAt(key, dateStr, ticked);
-            if (ticked) return n >= 2 ? '🔥 ' + n + '-day streak' : '🌱 Day 1 – well done';
-            return n >= 1 ? '🔥 ' + plural(n, 'day') + ' – keep it going' : h.idle;
+            return n >= 1 ? '🔥 ' + plural(n, 'day') : '0 days';
         }
         const n = countInMonth(key, dateStr, ticked);
         return n + '× in ' + MONTHS[parseInt(dateStr.slice(5, 7), 10) - 1];
