@@ -684,22 +684,33 @@ body.sdc-sol-active { overflow: hidden; }
     .sdc-sol-form { padding: 10px 12px 12px; }
 }
 
-/* Habits row (6.10): each habit is a small column, its note underneath */
+/* Habits row (6.10): titles above, each habit a small column with its note underneath */
+.sdc-habits-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px 32px;
+    background: #f0f0f1;
+    padding: 10px 12px;
+    border-radius: 4px;
+}
+.sdc-habits-row--view { background: transparent; padding: 0; }
 .sdc-habits {
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
+    flex-direction: column;
+    gap: 6px;
     min-width: 0;
 }
-.sdc-habits-title {
-    font-weight: bold;
-    line-height: 1.6;
-    white-space: nowrap;
+.sdc-weight-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
+.sdc-habits-title { display: block; font-weight: bold; }
 .sdc-habits-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px 22px;
+    gap: 6px 18px;
 }
 .sdc-habit {
     display: flex;
@@ -714,7 +725,7 @@ body.sdc-sol-active { overflow: hidden; }
 }
 #view_habits .sdc-habit > span:first-child { font-size: 1.1rem; }
 @media (max-width: 600px) {
-    .sdc-habits { flex-direction: column; gap: 4px; }
+    .sdc-habits-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* =========================================================
