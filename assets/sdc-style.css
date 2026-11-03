@@ -684,12 +684,37 @@ body.sdc-sol-active { overflow: hidden; }
     .sdc-sol-form { padding: 10px 12px 12px; }
 }
 
-/* Reading streak (6.1) */
-.sdc-streak {
-    margin-left: 8px;
+/* Habits row (6.10): each habit is a small column, its note underneath */
+.sdc-habits {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+}
+.sdc-habits-title {
+    font-weight: bold;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+.sdc-habits-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 22px;
+}
+.sdc-habit {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.sdc-habit label { white-space: nowrap; line-height: 1.6; }
+.sdc-habit-note {
     font-size: 0.85rem;
     color: #8a5a00;
     white-space: nowrap;
+}
+#view_habits .sdc-habit > span:first-child { font-size: 1.1rem; }
+@media (max-width: 600px) {
+    .sdc-habits { flex-direction: column; gap: 4px; }
 }
 
 /* =========================================================

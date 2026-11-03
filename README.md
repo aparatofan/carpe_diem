@@ -43,6 +43,10 @@ Ministry (6.9) counts the days you went out in the ministry: next to the box and
 you see how many times that month (“👣 3× in November”). It has its own 👣 filter, a CSV column and
 is part of Sol's habit counts. New database column `ministry`, added automatically on the next page load.
 
+Habit notes (6.10): every habit has a short note directly under its box, in the edit form and the day view:
+YKW and Sport show days since the last tick (“⏱ 4 days since last”), Shower and Reading show the streak
+(“🔥 3-day streak”), Ministry shows the month count (“1× in November”). On a phone the habits stack.
+
 ## Photo albums (since 6.6)
 A day can hold many photos instead of one picture.
 
