@@ -22,70 +22,88 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         'image': '' // the 🖼️ button is drawn by eventContent, not the title
     };
 
-    // --- READING STREAK ---
-    // Days with the reading box ticked, taken from the calendar data loaded at unlock.
-    const readingDays = new Set();
-    const ministryDays = new Set(); // 6.9: days with the ministry box ticked
-    function rebuildReadingDays() {
-        readingDays.clear();
-        ministryDays.clear();
+    // --- HABIT NOTES (6.10) ---
+    // Each habit gets a short note under its box, worked out from the
+    // calendar data loaded at unlock:
+    //   since  – days since it was last ticked (YKW, sport)
+    //   streak – consecutive days (shower, reading)
+    //   month  – how many times this month (ministry)
+    const HABITS = {
+        ykw:      { mode: 'since' },
+        sport:    { mode: 'since' },
+        shower:   { mode: 'streak', idle: 'Start a new streak' },
+        reading:  { mode: 'streak', idle: 'Even a few pages counts' },
+        ministry: { mode: 'month' }
+    };
+    const habitDays = {};
+    Object.keys(HABITS).forEach(k => { habitDays[k] = new Set(); });
+    function rebuildHabitDays() {
+        Object.keys(habitDays).forEach(k => habitDays[k].clear());
         masterEvents.forEach(evt => {
+            if (!evt.extendedProps || evt.extendedProps.type !== 'content') return;
             const day = String(evt.start).slice(0, 10);
-            if (evt.extendedProps && evt.extendedProps.reading) readingDays.add(day);
-            if (evt.extendedProps && evt.extendedProps.ministry) ministryDays.add(day);
+            Object.keys(habitDays).forEach(k => { if (evt.extendedProps[k]) habitDays[k].add(day); });
         });
     }
-    rebuildReadingDays();
+    rebuildHabitDays();
     function shiftDate(dateStr, days) {
         const t = new Date(dateStr + 'T12:00:00Z');
         t.setUTCDate(t.getUTCDate() + days);
         return t.toISOString().slice(0, 10);
     }
-    // Consecutive reading days ending on dateStr, counting dateStr itself only if tickedToday.
-    function readingStreakAt(dateStr, tickedToday) {
+    function daysBetween(a, b) {
+        return Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 86400000);
+    }
+    const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
+    // Consecutive ticked days ending on dateStr, counting dateStr itself only if tickedToday.
+    function streakAt(key, dateStr, tickedToday) {
         let n = tickedToday ? 1 : 0;
         let d = shiftDate(dateStr, -1);
-        while (readingDays.has(d)) { n++; d = shiftDate(d, -1); }
+        while (habitDays[key].has(d)) { n++; d = shiftDate(d, -1); }
         return n;
     }
-    function updateReadingStreak() {
-        const el = document.getElementById('sdc-reading-streak');
-        const box = document.getElementById('sdc_reading');
-        const dateEl = document.getElementById('sdc_date_field');
-        if (!el || !box || !dateEl || !dateEl.value) return;
-        const n = readingStreakAt(dateEl.value, box.checked);
-        const before = readingStreakAt(dateEl.value, false);
-        if (box.checked) {
-            el.textContent = n >= 2 ? '🔥 ' + n + '-day streak' : '🌱 Day 1 – well done';
-        } else {
-            el.textContent = before >= 1 ? '🔥 ' + before + (before === 1 ? ' day' : ' days') + ' – keep it going' : 'Even a few pages counts';
-        }
+    // Most recent ticked day strictly before dateStr ('' if none).
+    function lastBefore(key, dateStr) {
+        let best = '';
+        habitDays[key].forEach(d => { if (d < dateStr && d > best) best = d; });
+        return best;
     }
-    const readingBox = document.getElementById('sdc_reading');
-    if (readingBox) readingBox.addEventListener('change', updateReadingStreak);
-
-    // --- MINISTRY COUNT ---
     // How many times in the month of dateStr; dateStr itself counts only if tickedToday.
     const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-    function ministryCountInMonth(dateStr, tickedToday) {
+    function countInMonth(key, dateStr, tickedToday) {
         const prefix = dateStr.slice(0, 7);
         let n = tickedToday ? 1 : 0;
-        ministryDays.forEach(d => { if (d !== dateStr && d.slice(0, 7) === prefix) n++; });
+        habitDays[key].forEach(d => { if (d !== dateStr && d.slice(0, 7) === prefix) n++; });
         return n;
     }
-    function ministryMonthLabel(dateStr, n) {
+    function habitNote(key, dateStr, ticked) {
+        const h = HABITS[key];
+        if (h.mode === 'since') {
+            const last = lastBefore(key, dateStr);
+            if (!last) return ticked ? '✓ First one logged' : 'No record yet';
+            const n = daysBetween(last, dateStr);
+            return ticked ? '✓ ' + plural(n, 'day') + ' since previous' : '⏱ ' + plural(n, 'day') + ' since last';
+        }
+        if (h.mode === 'streak') {
+            const n = streakAt(key, dateStr, ticked);
+            if (ticked) return n >= 2 ? '🔥 ' + n + '-day streak' : '🌱 Day 1 – well done';
+            return n >= 1 ? '🔥 ' + plural(n, 'day') + ' – keep it going' : h.idle;
+        }
+        const n = countInMonth(key, dateStr, ticked);
         return n + '× in ' + MONTHS[parseInt(dateStr.slice(5, 7), 10) - 1];
     }
-    function updateMinistryCount() {
-        const el = document.getElementById('sdc-ministry-count');
-        const box = document.getElementById('sdc_ministry');
+    function updateHabitNote(key) {
+        const el = document.getElementById('sdc-note-' + key);
+        const box = document.getElementById('sdc_' + key);
         const dateEl = document.getElementById('sdc_date_field');
         if (!el || !box || !dateEl || !dateEl.value) return;
-        const n = ministryCountInMonth(dateEl.value, box.checked);
-        el.textContent = n > 0 ? ministryMonthLabel(dateEl.value, n) : '';
+        el.textContent = habitNote(key, dateEl.value, box.checked);
     }
-    const ministryBox = document.getElementById('sdc_ministry');
-    if (ministryBox) ministryBox.addEventListener('change', updateMinistryCount);
+    function updateHabitNotes() { Object.keys(HABITS).forEach(updateHabitNote); }
+    Object.keys(HABITS).forEach(key => {
+        const box = document.getElementById('sdc_' + key);
+        if (box) box.addEventListener('change', () => updateHabitNote(key));
+    });
 
     function getFilteredEvents() {
         if(activeFilter === 'all') return masterEvents;
@@ -152,7 +170,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     function replaceCalendarEvents(events) {
         masterEvents.length = 0;
         events.forEach(e => masterEvents.push(e));
-        rebuildReadingDays();
+        rebuildHabitDays();
         refreshCalendarEvents();
     }
 
@@ -407,8 +425,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         setVal('sdc_album_title', f.sdc_album_title);
         setVal('sdc_weight', f.sdc_weight);
         setChk('sdc_ykw', f.sdc_ykw); setChk('sdc_sport', f.sdc_sport); setChk('sdc_shower', f.sdc_shower); setChk('sdc_reading', f.sdc_reading); setChk('sdc_ministry', f.sdc_ministry);
-        updateReadingStreak();
-        updateMinistryCount();
+        updateHabitNotes();
 
         const textIds = ['sdc_daily_text','sdc_highlights','sdc_talking_head','sdc_podcasts','sdc_lessons','sdc_posts_entries'];
         textIds.forEach(id => setVal(id, f[id]));
@@ -1087,19 +1104,11 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             }
 
             let habitHtml = '';
-            habitHtml += (d.ykw == 1 ? '✅ YKW ' : '⬜ YKW ');
-            habitHtml += '<span style=\"margin-left:15px;\"></span>';
-            habitHtml += (d.sport == 1 ? '✅ SPORT ' : '⬜ SPORT ');
-            habitHtml += '<span style=\"margin-left:15px;\"></span>';
-            habitHtml += (d.shower == 1 ? '✅ SHOWER' : '⬜ SHOWER');
-            habitHtml += '<span style=\"margin-left:15px;\"></span>';
-            habitHtml += (d.reading == 1 ? '✅ READING' : '⬜ READING');
-            const viewStreak = readingStreakAt(dateStr, d.reading == 1);
-            if (viewStreak >= 2) habitHtml += ' <span class=\"sdc-streak\">🔥 ' + viewStreak + ' days</span>';
-            habitHtml += '<span style=\"margin-left:15px;\"></span>';
-            habitHtml += (d.ministry == 1 ? '✅ MINISTRY' : '⬜ MINISTRY');
-            const viewMinistry = ministryCountInMonth(dateStr, d.ministry == 1);
-            if (viewMinistry > 0) habitHtml += ' <span class=\"sdc-streak\">👣 ' + ministryMonthLabel(dateStr, viewMinistry) + '</span>';
+            [['ykw', 'YKW'], ['sport', 'SPORT'], ['shower', 'SHOWER'], ['reading', 'READING'], ['ministry', 'MINISTRY']].forEach(([key, label]) => {
+                const ticked = d[key] == 1;
+                habitHtml += '<div class="sdc-habit"><span>' + (ticked ? '✅ ' : '⬜ ') + label + '</span>'
+                    + '<span class="sdc-habit-note">' + habitNote(key, dateStr, ticked) + '</span></div>';
+            });
             document.getElementById('view_habits').innerHTML = habitHtml;
 
             if (!keepEditing) {
@@ -1132,7 +1141,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             showEdit();
         }
 
-        if (!keepEditing) { updateReadingStreak(); updateMinistryCount(); }
+        if (!keepEditing) updateHabitNotes();
 
         // E. Manage Holidays List
         holidayList.innerHTML = '';

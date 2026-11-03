@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Simple Daily Calendar with Popups
  * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.9.3
+ * Version: 6.10.0
  * Author: AI Assistant
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.9.3';
+	const VERSION = '6.10.0';
 	// Bump when the database tables change; existing sites are upgraded automatically.
 	const DB_VERSION = '6.9';
 	const OPT_DB_VERSION = 'sdc_db_version';
@@ -984,8 +984,8 @@ class SimpleDailyCalendar {
 						<div id="sdc-view-image-wrapper" style="display:none;"></div>
 
 						<div class="sdc-view-section" style="background:#f9f9f9; padding:10px; border-radius:4px;">
-							<div style="display:flex; justify-content:space-between;">
-								<div><strong>Habits:</strong> <span id="view_habits" style="font-size:1.1rem;"></span></div>
+							<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+								<div class="sdc-habits"><strong class="sdc-habits-title">Habits:</strong> <div id="view_habits" class="sdc-habits-list"></div></div>
 								<div id="view_weight_container" style="font-weight:bold; color:#0856c9;"></div>
 							</div>
 						</div>
@@ -1011,16 +1011,31 @@ class SimpleDailyCalendar {
 						<form id="sdc-content-form">
 							<input type="hidden" id="sdc_date_field" name="sdc_date_field" value="">
 
-							<div class="sdc-form-group" style="background:#f0f0f1; padding:10px; border-radius:4px; display:flex; justify-content:space-between; align-items:center;">
-								<div>
-									<span style="font-weight:bold; margin-right:10px;">Habits:</span>
-									<label><input type="checkbox" id="sdc_ykw" name="sdc_ykw" value="1"> 🤫 YKW</label> &nbsp;
-									<label><input type="checkbox" id="sdc_sport" name="sdc_sport" value="1"> 🚴 SPORT</label> &nbsp;
-									<label><input type="checkbox" id="sdc_shower" name="sdc_shower" value="1"> 🚿 SHOWER</label> &nbsp;
-									<label title="Read today – even a few pages counts"><input type="checkbox" id="sdc_reading" name="sdc_reading" value="1"> 👓 READING</label>
-									<span id="sdc-reading-streak" class="sdc-streak"></span> &nbsp;
-									<label title="Went out in the ministry today"><input type="checkbox" id="sdc_ministry" name="sdc_ministry" value="1"> 👣 MINISTRY</label>
-									<span id="sdc-ministry-count" class="sdc-streak"></span>
+							<div class="sdc-form-group" style="background:#f0f0f1; padding:10px; border-radius:4px; display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+								<div class="sdc-habits">
+									<span class="sdc-habits-title">Habits:</span>
+									<div class="sdc-habits-list">
+									<div class="sdc-habit">
+										<label title="Days since the last tick"><input type="checkbox" id="sdc_ykw" name="sdc_ykw" value="1"> 🤫 YKW</label>
+										<span id="sdc-note-ykw" class="sdc-habit-note"></span>
+									</div>
+									<div class="sdc-habit">
+										<label title="Days since the last workout"><input type="checkbox" id="sdc_sport" name="sdc_sport" value="1"> 🚴 SPORT</label>
+										<span id="sdc-note-sport" class="sdc-habit-note"></span>
+									</div>
+									<div class="sdc-habit">
+										<label title="Daily streak"><input type="checkbox" id="sdc_shower" name="sdc_shower" value="1"> 🚿 SHOWER</label>
+										<span id="sdc-note-shower" class="sdc-habit-note"></span>
+									</div>
+									<div class="sdc-habit">
+										<label title="Read today – even a few pages counts"><input type="checkbox" id="sdc_reading" name="sdc_reading" value="1"> 👓 READING</label>
+										<span id="sdc-note-reading" class="sdc-habit-note"></span>
+									</div>
+									<div class="sdc-habit">
+										<label title="Went out in the ministry today"><input type="checkbox" id="sdc_ministry" name="sdc_ministry" value="1"> 👣 MINISTRY</label>
+										<span id="sdc-note-ministry" class="sdc-habit-note"></span>
+									</div>
+									</div>
 								</div>
 								<div>
 									<label for="sdc_weight" style="font-weight:bold;">Weight (kg):</label>
