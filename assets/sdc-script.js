@@ -225,7 +225,7 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         events: masterEvents,
         eventOrder: '-duration',
         dateClick: function(info) { openModalForDate(info.dateStr, 'standard'); },
-        // Days with photos get a small round cover thumbnail (and a count) at the end of their icon row.
+        // Days with photos get a small round cover thumbnail at the end of their icon row.
         eventContent: function(arg) {
             const p = arg.event.extendedProps || {};
             const photos = p.photos || [];
@@ -242,12 +242,6 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             img.alt = '';
             img.loading = 'lazy';
             pic.appendChild(img);
-            if (photos.length > 1) {
-                const n = document.createElement('span');
-                n.className = 'sdc-pic-count';
-                n.textContent = photos.length;
-                pic.appendChild(n);
-            }
             wrap.appendChild(pic);
             return { domNodes: [wrap] };
         },
