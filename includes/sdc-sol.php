@@ -675,7 +675,15 @@ TXT;
 			if ( $e ) { $sql2 .= " AND $dcol <= %s"; $args2[] = $e; }
 			$sql2 .= " ORDER BY $dcol DESC LIMIT 20";
 			foreach ( (array) $wpdb->get_results( $wpdb->prepare( $sql2, $args2 ), ARRAY_A ) as $r ) {
-				unset( $r['id'], $r['image_url'] );
+				// Holidays/events (6.11) hold photo albums: Sol gets the captions, not the JSON.
+				if ( ! empty( $r['photos'] ) ) {
+					$caps = array();
+					foreach ( (array) json_decode( (string) $r['photos'], true ) as $p ) {
+						if ( is_array( $p ) && ! empty( $p['caption'] ) ) $caps[] = (string) $p['caption'];
+					}
+					if ( $caps ) $r['photo_captions'] = implode( ' · ', $caps );
+				}
+				unset( $r['id'], $r['image_url'], $r['photos'] );
 				$r['type'] = $tbl;
 				$titles[] = $r;
 			}

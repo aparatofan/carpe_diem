@@ -732,7 +732,8 @@ body.sdc-sol-active { overflow: hidden; }
    Photo albums (6.6)
    Month-view cover thumbnail · magazine collage · full-screen viewer · photo manager
    ========================================================= */
-#sdc-app {
+#sdc-app,
+.sdc-viewer { /* the viewer sits on <body> (6.9.2), outside #sdc-app, so it needs the palette too */
     --sdc-paper: #e8e7e3;
     --sdc-ink: #1b1b1a;
     --sdc-ink-soft: #5c5b57;
@@ -915,6 +916,70 @@ body.sdc-sol-active { overflow: hidden; }
 @media (max-width: 560px) {
     .sdc-collage-head { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
+
+/* Holiday & event albums (6.11): same collage, blue or green decorations */
+.sdc-collage--holiday { --sdc-accent: #0856c9; }
+.sdc-collage--event   { --sdc-accent: #16a34a; }
+.sdc-collage--holiday .sdc-collage-title { color: #0856c9; }
+.sdc-collage--event   .sdc-collage-title { color: #16a34a; }
+/* A date range ("12–19") is wider than one day, so the big number steps down a little. */
+.sdc-collage-date.is-range .sdc-cd-day { font-size: clamp(30px, 5.2vw, 60px); white-space: nowrap; }
+.sdc-collage-date.is-range .sdc-cd-month { white-space: nowrap; }
+.sdc-collage-date.is-range .sdc-cd-year { font-size: clamp(22px, 3.6vw, 40px); }
+.sdc-range-album { margin: 0 0 24px; }
+#sdc-holiday-display-area .sdc-holiday-card,
+#sdc-event-display-area .sdc-event-card { border-left: 4px solid currentColor; }
+#sdc-holiday-display-area .sdc-holiday-card { color: #0856c9; }
+#sdc-event-display-area .sdc-event-card { color: #16a34a; }
+#sdc-holiday-display-area .sdc-holiday-dates,
+#sdc-event-display-area .sdc-event-dates { color: #555; }
+.sdc-viewer--holiday { --sdc-accent: #5b9bff; }
+.sdc-viewer--event   { --sdc-accent: #4ade80; }
+
+/* Holidays / Events tab: compact rows with a thumbnail strip */
+.sdc-range-item {
+    background: #fff;
+    border: 1px solid #e3e1db;
+    border-left: 4px solid var(--sdc-range, #0856c9);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+.sdc-range-item--holiday { --sdc-range: #0856c9; }
+.sdc-range-item--event   { --sdc-range: #16a34a; }
+.sdc-range-item-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sdc-range-item-head strong { color: var(--sdc-range); font-family: 'Roboto Slab', serif; font-size: 1.05rem; }
+.sdc-range-item-dates { color: #666; font-size: .9em; }
+.sdc-range-item-actions { margin-left: auto; display: flex; gap: 14px; }
+.sdc-range-item-actions a { text-decoration: none; font-size: .9em; }
+.sdc-range-edit { color: var(--sdc-range); }
+.sdc-range-del { color: #d63638; }
+.sdc-range-thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.sdc-range-thumb {
+    all: unset;
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: 5px;
+    overflow: hidden;
+    cursor: zoom-in;
+    background: #ddd;
+}
+.sdc-range-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sdc-range-thumb:focus-visible { outline: 2px solid var(--sdc-range); outline-offset: 2px; }
+.sdc-range-thumb-more {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(27,27,26,.55); color: #fff;
+    font: 400 15px/1 var(--sdc-display);
+}
+#sdc-holiday-list .sdc-range-album, #sdc-event-list .sdc-range-album { margin-bottom: 16px; }
+.sdc-range-form .sdc-album-editor { margin-bottom: 15px; }
+.sdc-album-editor--holiday .sdc-photo-tile.is-drop .sdc-photo-frame { box-shadow: 0 0 0 3px #0856c9; }
+.sdc-album-editor--event   .sdc-photo-tile.is-drop .sdc-photo-frame { box-shadow: 0 0 0 3px #16a34a; }
+#sdc-holiday-cancel-edit, #sdc-event-cancel-edit { margin-left: 8px; }
+.sdc-album-editor--holiday .sdc-photo-empty:hover { border-color: #0856c9; }
+.sdc-album-editor--event   .sdc-photo-empty:hover { border-color: #16a34a; }
 
 /* --- Full-screen viewer --- */
 html.sdc-viewer-lock, html.sdc-viewer-lock body { overflow: hidden; }

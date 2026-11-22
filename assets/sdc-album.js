@@ -1,10 +1,14 @@
 /*
  * Carpe Diem – photo albums (6.6)
  *
- *   sdcAlbum.renderCollage(el, photos, { date, title, onOpen })  – magazine collage for the day view
- *   sdcAlbum.openViewer(photos, index, { date, onOpenDay })       – full-screen viewer
- *   sdcAlbum.openAlbum(photos, { date, title, onOpenDay })        – the collage in its own window (6.9)
- *   sdcAlbum.createEditor(gridEl, hiddenInput, onChange)          – photo manager in the edit form
+ *   sdcAlbum.renderCollage(el, photos, { date, endDate, title, variant })  – magazine collage for the day view
+ *   sdcAlbum.openViewer(photos, index, { date, endDate, variant, onOpenDay }) – full-screen viewer
+ *   sdcAlbum.openAlbum(photos, { date, title, onOpenDay })                   – the collage in its own window (6.9)
+ *   sdcAlbum.createEditor(gridEl, hiddenInput, onChange, { emptyTitle, emptyText, onAdd }) – photo manager
+ *
+ * 6.11: holidays and events use the same collage. `endDate` turns the corner date into a
+ * range (12–19 July · 8 days) and `variant: 'holiday' | 'event'` colours the decorations
+ * blue or green instead of the day's yellow.
  *
  * A photo is { id, url, large, thumb, w, h, caption }. The first photo is the cover.
  * Everything is built with DOM methods and textContent, never from caption HTML.
@@ -56,6 +60,31 @@
         };
     }
 
+    // The corner date for a holiday or event that runs over several days (6.11).
+    function rangeDate(startStr, endStr) {
+        const a = new Date(startStr + 'T12:00:00'), b = new Date(endStr + 'T12:00:00');
+        const days = Math.round((b - a) / 86400000) + 1;
+        const mon = d => d.toLocaleDateString('en-GB', { month: 'long' });
+        const monShort = d => d.toLocaleDateString('en-GB', { month: 'short' });
+        const sameYear = a.getFullYear() === b.getFullYear();
+        const sameMonth = sameYear && a.getMonth() === b.getMonth();
+        return {
+            day: a.getDate() + '–' + b.getDate(),
+            month: sameMonth ? mon(a) : (monShort(a) + ' – ' + monShort(b)),
+            year: sameYear ? String(a.getFullYear()) : (a.getFullYear() + '–' + String(b.getFullYear()).slice(-2)),
+            weekday: days + ' days',
+            long: a.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: sameYear ? undefined : 'numeric' }) +
+                  ' – ' + b.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+        };
+    }
+
+    // One date or a range, whichever the options describe.
+    function dateFor(opts) {
+        const start = opts.date || new Date().toISOString().slice(0, 10);
+        if (opts.endDate && opts.endDate !== start) return Object.assign(rangeDate(start, opts.endDate), { isRange: true });
+        return niceDate(start);
+    }
+
     function readMono() {
         try { const v = localStorage.getItem(MONO_KEY); return v === null ? true : v === '1'; } catch (e) { return true; }
     }
@@ -102,10 +131,11 @@
         container.innerHTML = '';
         if (!photos || !photos.length) return;
 
-        const date = niceDate(opts.date || new Date().toISOString().slice(0, 10));
-        const rnd = seeded((opts.date || '') + '|' + photos.length);
+        const date = dateFor(opts);
+        const rnd = seeded((opts.date || '') + '|' + (opts.endDate || '') + '|' + (opts.title || '') + '|' + photos.length);
 
         const root = el('section', 'sdc-collage');
+        if (opts.variant) root.classList.add('sdc-collage--' + opts.variant);
         if (readMono()) root.classList.add('is-mono');
         root.setAttribute('aria-label', (opts.title ? opts.title + ' – ' : '') + photos.length + (photos.length === 1 ? ' photo' : ' photos'));
 
@@ -114,7 +144,7 @@
         stage.appendChild(grid);
 
         // Date in the corner – always the top-right cell block.
-        const dateBox = el('div', 'sdc-collage-date');
+        const dateBox = el('div', 'sdc-collage-date' + (date.isRange ? ' is-range' : ''));
         dateBox.appendChild(el('span', 'sdc-cd-day', date.day));
         dateBox.appendChild(el('span', 'sdc-cd-month', date.month));
         dateBox.appendChild(el('span', 'sdc-cd-year', date.year));
@@ -146,7 +176,7 @@
                 fig.classList.add('has-more');
                 btn.appendChild(el('span', 'sdc-collage-more', '+' + hidden));
             }
-            btn.addEventListener('click', () => openViewer(photos, i, { date: opts.date }));
+            btn.addEventListener('click', () => openViewer(photos, i, { date: opts.date, endDate: opts.endDate, variant: opts.variant }));
             fig.appendChild(btn);
             fig.style.setProperty('--dx', picks[i].dx + 'px');
             fig.style.setProperty('--dy', picks[i].dy + 'px');
@@ -326,8 +356,10 @@
         if (!viewer || !viewer.isConnected) viewer = buildViewer();
         state = { photos: photos, index: Math.max(0, Math.min(index || 0, photos.length - 1)), opts: opts || {} };
 
-        const date = state.opts.date ? niceDate(state.opts.date).long : '';
+        const date = state.opts.date ? dateFor(state.opts).long : '';
         viewer.querySelector('.sdc-viewer-date').textContent = date;
+        viewer.classList.remove('sdc-viewer--holiday', 'sdc-viewer--event');
+        if (state.opts.variant) viewer.classList.add('sdc-viewer--' + state.opts.variant);
         viewer.querySelector('.sdc-viewer-openday').style.display = state.opts.onOpenDay ? '' : 'none';
         viewer.classList.toggle('is-single', photos.length === 1);
 
@@ -403,7 +435,8 @@
         };
     }
 
-    function createEditor(grid, hidden, onChange) {
+    function createEditor(grid, hidden, onChange, eopts) {
+        eopts = eopts || {};
         let photos = [];
         let dragFrom = null;
 
@@ -417,9 +450,12 @@
             if (!photos.length) {
                 const empty = el('button', 'sdc-photo-empty');
                 empty.type = 'button';
-                empty.appendChild(el('strong', null, 'Start an album for this day'));
-                empty.appendChild(el('span', null, 'Add one photo or a whole set.'));
-                empty.addEventListener('click', () => { const b = document.getElementById('sdc-upload-btn'); if (b) b.click(); });
+                empty.appendChild(el('strong', null, eopts.emptyTitle || 'Start an album for this day'));
+                empty.appendChild(el('span', null, eopts.emptyText || 'Add one photo or a whole set.'));
+                empty.addEventListener('click', () => {
+                    if (eopts.onAdd) { eopts.onAdd(); return; }
+                    const b = document.getElementById('sdc-upload-btn'); if (b) b.click();
+                });
                 grid.appendChild(empty);
                 return;
             }
@@ -441,7 +477,7 @@
                     tools.appendChild(cover);
                 }
                 const del = el('button', 'sdc-photo-tool is-remove', '×');
-                del.type = 'button'; del.title = 'Remove from this day'; del.setAttribute('aria-label', 'Remove photo ' + (i + 1));
+                del.type = 'button'; del.title = eopts.removeTitle || 'Remove from this day'; del.setAttribute('aria-label', 'Remove photo ' + (i + 1));
                 del.addEventListener('click', () => { photos.splice(i, 1); render(); sync(true); });
                 tools.appendChild(del);
                 frame.appendChild(tools);
