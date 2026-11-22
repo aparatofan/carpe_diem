@@ -71,6 +71,23 @@ A day can hold many photos instead of one picture.
   titles. Old single pictures show as one-photo albums – nothing to migrate.
 - Photos are ordinary media-library files, i.e. reachable by their address.
 
+## Holiday & event albums (6.11)
+Holidays and events hold a whole album too, instead of one image.
+
+- **Adding:** in the *Holidays* / *Events* tab, the 📷 Photos box works exactly like the day's
+  (multi-select, drag to reorder, ★ cover, × remove, a caption per photo).
+- **Editing:** each holiday/event in the tab now has **Edit** (name, dates, photos) next to
+  **Delete**. Saving no longer reloads the page – the calendar and the window update in place.
+- **Day view:** on every day of a holiday or event, its album shows as the same magazine
+  collage as the day's photos, with its name as the title and the date range in the corner
+  (“10–17 · November · 2026 · 8 days”). Decorations (rings, lines, chevrons) are **blue** for
+  holidays and **green** for events; the full-screen viewer picks up the same colour.
+  Clicking the stripe in the month view shows the album(s) on their own.
+- **Tab list:** a compact row per holiday/event with a strip of thumbnails (click to open).
+- **Storage:** new `photos` column (JSON, same format as days) in both tables, added
+  automatically on the next page load. `image_url` keeps the cover, so an old single image
+  simply shows as a one-photo album – nothing to migrate. Sol sees photo captions, not the JSON.
+
 ## PIN lock (since 5.5)
 - The first time you open the calendar page you are asked to choose a PIN (4–8 digits).
 - After that, the page always opens on a lock screen. Calendar data is **not** in the page

@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Simple Daily Calendar with Popups
- * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.2 – PIN lock, writing mode, Sol, reading habit).
- * Version: 6.10.2
+ * Description: Second Brain Tracker: Books, Films & Series Tracking (Version 6.11 – PIN lock, writing mode, Sol, habits, photo albums for days, holidays and events).
+ * Version: 6.11.0
  * Author: AI Assistant
  */
 
@@ -12,9 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class SimpleDailyCalendar {
 
-	const VERSION = '6.10.2';
+	const VERSION = '6.11.0';
 	// Bump when the database tables change; existing sites are upgraded automatically.
-	const DB_VERSION = '6.9';
+	const DB_VERSION = '6.11';
 	const OPT_DB_VERSION = 'sdc_db_version';
 
 	// --- PIN LOCK SETTINGS ---
@@ -73,7 +73,7 @@ class SimpleDailyCalendar {
 		// AJAX Endpoints
 		add_action( 'wp_ajax_sdc_get_content', array( $this, 'ajax_get_content' ) );
 		add_action( 'wp_ajax_sdc_save_content', array( $this, 'ajax_save_content' ) );
-		add_action( 'wp_ajax_sdc_add_holiday', array( $this, 'ajax_add_holiday' ) );
+		add_action( 'wp_ajax_sdc_add_holiday', array( $this, 'ajax_add_holiday' ) ); // also updates (6.11: id given)
 		add_action( 'wp_ajax_sdc_delete_holiday', array( $this, 'ajax_delete_holiday' ) );
 		add_action( 'wp_ajax_sdc_download_report', array( $this, 'ajax_download_report' ) );
 		add_action( 'wp_ajax_sdc_add_event', array( $this, 'ajax_add_event' ) );
@@ -347,6 +347,66 @@ class SimpleDailyCalendar {
 		return implode( ' · ', $caps );
 	}
 
+	/** Holiday/event rows → each gets `photos_list`; the raw JSON column is dropped (6.11). */
+	private function with_photo_lists( $rows ) {
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$row['photos_list'] = $this->photos_for_row( $row );
+			unset( $row['photos'] );
+			$out[] = $row;
+		}
+		return $out;
+	}
+
+	/**
+	 * Adds a holiday or an event – or updates one when an id is sent (6.11).
+	 * Photos arrive as the same JSON list the day album uses; `image_url` keeps the cover.
+	 */
+	private function save_range_item( $table, $label ) {
+		$this->require_unlocked();
+		global $wpdb;
+
+		$id    = isset( $_POST['id'] ) ? intval( $_POST['id'] ) : 0;
+		$title = isset( $_POST['title'] ) ? sanitize_text_field( wp_unslash( $_POST['title'] ) ) : '';
+		$start = isset( $_POST['start'] ) ? sanitize_text_field( $_POST['start'] ) : '';
+		$end   = isset( $_POST['end'] ) ? sanitize_text_field( $_POST['end'] ) : '';
+
+		if ( $title === '' || $start === '' || $end === '' ) wp_send_json_error( 'Missing fields' );
+		$is_date = function ( $d ) { return (bool) preg_match( '/^\d{4}-\d{2}-\d{2}$/', $d ); };
+		if ( ! $is_date( $start ) || ! $is_date( $end ) ) wp_send_json_error( 'Invalid date' );
+		if ( $end < $start ) { $tmp = $start; $start = $end; $end = $tmp; }
+
+		if ( isset( $_POST['photos'] ) ) {
+			$photos = $this->clean_photos( wp_unslash( $_POST['photos'] ) );
+		} else {
+			// Older form: a single image address.
+			$image  = isset( $_POST['image'] ) ? esc_url_raw( wp_unslash( $_POST['image'] ) ) : '';
+			$photos = $image !== '' ? $this->clean_photos( array( array( 'url' => $image ) ) ) : array();
+		}
+
+		$data = array(
+			'title'      => $title,
+			'image_url'  => ! empty( $photos ) ? $photos[0]['url'] : '',
+			'photos'     => ! empty( $photos ) ? wp_json_encode( $photos ) : '',
+			'start_date' => $start,
+			'end_date'   => $end,
+		);
+
+		if ( $id > 0 ) {
+			$found = $wpdb->update( $table, $data, array( 'id' => $id ) );
+			if ( $found === false ) wp_send_json_error( 'Could not save the ' . strtolower( $label ) . '.' );
+			$message = $label . ' Saved';
+		} else {
+			if ( ! $wpdb->insert( $table, $data ) ) wp_send_json_error( 'Could not add the ' . strtolower( $label ) . '.' );
+			$message = $label . ' Added';
+		}
+
+		wp_send_json_success( array(
+			'message' => $message,
+			'events'  => json_decode( $this->get_all_events_json(), true ),
+		) );
+	}
+
 	/** Turns the JSON sent by the browser into a safe, known structure (or null). */
 	private function clean_draft( $raw ) {
 		if ( ! is_string( $raw ) || $raw === '' || strlen( $raw ) > 1048576 ) return null;
@@ -571,6 +631,7 @@ class SimpleDailyCalendar {
 			id mediumint(9) NOT NULL AUTO_INCREMENT,
 			title VARCHAR(255) NOT NULL,
 			image_url TEXT,
+			photos LONGTEXT,
 			start_date DATE NOT NULL,
 			end_date DATE NOT NULL,
 			PRIMARY KEY  (id)
@@ -580,6 +641,7 @@ class SimpleDailyCalendar {
 			id mediumint(9) NOT NULL AUTO_INCREMENT,
 			title VARCHAR(255) NOT NULL,
 			image_url TEXT,
+			photos LONGTEXT,
 			start_date DATE NOT NULL,
 			end_date DATE NOT NULL,
 			PRIMARY KEY  (id)
@@ -646,6 +708,15 @@ class SimpleDailyCalendar {
 				$wpdb->query( "ALTER TABLE $this->table_content ADD COLUMN $definition" );
 			}
 			if ( ! $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $this->table_content LIKE %s", $name ) ) ) {
+				$all_there = false;
+			}
+		}
+		// 6.11: holidays and events hold photo albums too.
+		foreach ( array( $this->table_holidays, $this->table_events ) as $table ) {
+			if ( ! $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $table LIKE %s", 'photos' ) ) ) {
+				$wpdb->query( "ALTER TABLE $table ADD COLUMN photos LONGTEXT AFTER image_url" );
+			}
+			if ( ! $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM $table LIKE %s", 'photos' ) ) ) {
 				$all_there = false;
 			}
 		}
@@ -1112,17 +1183,23 @@ class SimpleDailyCalendar {
 					<ul id="sdc-event-list" style="margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:15px; padding-left:0; list-style-type:none;"></ul>
 
 					<div id="sdc-add-event-wrapper">
-						<h4>Add New Event</h4>
-						<form id="sdc-event-form">
+						<h4 id="sdc-event-form-title">Add New Event</h4>
+						<form id="sdc-event-form" class="sdc-range-form sdc-range-form--event">
+							<input type="hidden" id="sdc_event_id" value="">
 							<div class="sdc-form-group">
 								<label>Event Description (e.g. Concert):</label>
 								<input type="text" id="sdc_event_title" required class="widefat">
 							</div>
-							<div class="sdc-form-group">
-								<label>Event Image (Optional):</label>
-								<div style="display:flex; gap:10px;">
-									<input type="url" id="sdc_event_image" name="sdc_event_image" class="widefat" placeholder="https://...">
-									<button type="button" id="sdc-event-upload-btn" class="button">Select Image</button>
+							<?php /* 6.11: a whole album instead of one image – the same photo manager as Day Content. */ ?>
+							<div class="sdc-form-group sdc-album-editor sdc-album-editor--event">
+								<div class="sdc-album-editor-head">
+									<label>📷 Photos</label>
+								</div>
+								<input type="hidden" id="sdc_event_photos" value="[]">
+								<div id="sdc-event-photo-grid" class="sdc-photo-grid"></div>
+								<div class="sdc-album-editor-foot">
+									<button type="button" id="sdc-event-upload-btn" class="button">+ Add photos</button>
+									<span class="sdc-album-hint">Select several at once. Drag to reorder – the first photo is the cover.</span>
 								</div>
 							</div>
 							<div style="display:flex; gap:10px;">
@@ -1135,7 +1212,8 @@ class SimpleDailyCalendar {
 									<input type="date" id="sdc_event_end" required class="widefat">
 								</div>
 							</div>
-							<button type="submit" class="button button-primary" style="background-color: #16a34a; border-color: #16a34a;">Add Event</button>
+							<button type="submit" id="sdc-event-submit" class="button button-primary" style="background-color: #16a34a; border-color: #16a34a;">Add Event</button>
+							<button type="button" id="sdc-event-cancel-edit" class="button" style="display:none;">Cancel</button>
 						</form>
 					</div>
 				</div>
@@ -1147,17 +1225,23 @@ class SimpleDailyCalendar {
 					<ul id="sdc-holiday-list" style="margin-bottom:20px; border-bottom:1px solid #ddd; padding-bottom:15px; padding-left:0; list-style-type:none;"></ul>
 
 					<div id="sdc-add-holiday-wrapper">
-						<h4>Add New Holiday</h4>
-						<form id="sdc-holiday-form">
+						<h4 id="sdc-holiday-form-title">Add New Holiday</h4>
+						<form id="sdc-holiday-form" class="sdc-range-form sdc-range-form--holiday">
+							<input type="hidden" id="sdc_holiday_id" value="">
 							<div class="sdc-form-group">
 								<label>Holiday Description (e.g. Rome):</label>
 								<input type="text" id="sdc_holiday_title" required class="widefat">
 							</div>
-							<div class="sdc-form-group">
-								<label>Holiday Image (Optional):</label>
-								<div style="display:flex; gap:10px;">
-									<input type="url" id="sdc_holiday_image" name="sdc_holiday_image" class="widefat" placeholder="https://...">
-									<button type="button" id="sdc-holiday-upload-btn" class="button">Select Image</button>
+							<?php /* 6.11: a whole album instead of one image – the same photo manager as Day Content. */ ?>
+							<div class="sdc-form-group sdc-album-editor sdc-album-editor--holiday">
+								<div class="sdc-album-editor-head">
+									<label>📷 Photos</label>
+								</div>
+								<input type="hidden" id="sdc_holiday_photos" value="[]">
+								<div id="sdc-holiday-photo-grid" class="sdc-photo-grid"></div>
+								<div class="sdc-album-editor-foot">
+									<button type="button" id="sdc-holiday-upload-btn" class="button">+ Add photos</button>
+									<span class="sdc-album-hint">Select several at once. Drag to reorder – the first photo is the cover.</span>
 								</div>
 							</div>
 							<div style="display:flex; gap:10px;">
@@ -1170,7 +1254,8 @@ class SimpleDailyCalendar {
 									<input type="date" id="sdc_holiday_end" required class="widefat">
 								</div>
 							</div>
-							<button type="submit" class="button button-primary" style="background-color: #0856c9; border-color: #0856c9;">Add Holiday</button>
+							<button type="submit" id="sdc-holiday-submit" class="button button-primary" style="background-color: #0856c9; border-color: #0856c9;">Add Holiday</button>
+							<button type="button" id="sdc-holiday-cancel-edit" class="button" style="display:none;">Cancel</button>
 						</form>
 					</div>
 				</div>
@@ -1206,6 +1291,10 @@ class SimpleDailyCalendar {
 			"SELECT * FROM $this->table_events WHERE start_date <= %s AND end_date >= %s",
 			$date, $date
 		), ARRAY_A );
+
+		// 6.11: holidays and events carry photo albums (an old single image = one-photo album).
+		$holidays = $this->with_photo_lists( $holidays );
+		$events   = $this->with_photo_lists( $events );
 
 		// Books: active (non-completed) for edit mode
 		$books_active = $wpdb->get_results(
@@ -1408,18 +1497,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_add_holiday() {
-		$this->require_unlocked();
-		global $wpdb;
-
-		$title = sanitize_text_field( wp_unslash($_POST['title']) );
-		$image = esc_url_raw( $_POST['image'] );
-		$start = sanitize_text_field( $_POST['start'] );
-		$end   = sanitize_text_field( $_POST['end'] );
-
-		if(empty($title) || empty($start) || empty($end)) wp_send_json_error('Missing fields');
-
-		$wpdb->insert( $this->table_holidays, array('title'=>$title, 'image_url'=>$image, 'start_date'=>$start, 'end_date'=>$end) );
-		wp_send_json_success( 'Holiday Added' );
+		$this->save_range_item( $this->table_holidays, 'Holiday' );
 	}
 
 	public function ajax_delete_holiday() {
@@ -1427,7 +1505,7 @@ class SimpleDailyCalendar {
 		global $wpdb;
 		$id = intval( $_POST['id'] );
 		$wpdb->delete( $this->table_holidays, array('id'=>$id) );
-		wp_send_json_success( 'Deleted' );
+		wp_send_json_success( array( 'message' => 'Deleted', 'events' => json_decode( $this->get_all_events_json(), true ) ) );
 	}
 
 	public function ajax_download_report() {
@@ -1593,18 +1671,7 @@ class SimpleDailyCalendar {
 	}
 
 	public function ajax_add_event() {
-		$this->require_unlocked();
-		global $wpdb;
-
-		$title = sanitize_text_field( wp_unslash($_POST['title']) );
-		$image = esc_url_raw( $_POST['image'] );
-		$start = sanitize_text_field( $_POST['start'] );
-		$end   = sanitize_text_field( $_POST['end'] );
-
-		if(empty($title) || empty($start) || empty($end)) wp_send_json_error('Missing fields');
-
-		$wpdb->insert( $this->table_events, array('title'=>$title, 'image_url'=>$image, 'start_date'=>$start, 'end_date'=>$end) );
-		wp_send_json_success( 'Event Added' );
+		$this->save_range_item( $this->table_events, 'Event' );
 	}
 
 	public function ajax_delete_event() {
@@ -1612,7 +1679,7 @@ class SimpleDailyCalendar {
 		global $wpdb;
 		$id = intval( $_POST['id'] );
 		$wpdb->delete( $this->table_events, array('id'=>$id) );
-		wp_send_json_success( 'Deleted' );
+		wp_send_json_success( array( 'message' => 'Deleted', 'events' => json_decode( $this->get_all_events_json(), true ) ) );
 	}
 }
 

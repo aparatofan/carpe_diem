@@ -724,17 +724,256 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
             dailyUploader.open();
         });
     }
-    var holidayUploader;
-    const holidayUploadBtn = document.getElementById('sdc-holiday-upload-btn');
-    if(holidayUploadBtn) {
-        holidayUploadBtn.addEventListener('click', function(e) {
+    // --- HOLIDAY & EVENT ALBUMS (6.11) ---
+    // Holidays and events hold a whole album, managed exactly like the day's photos.
+    const RANGE_KINDS = {
+        holiday: { label: 'Holiday', plural: 'holidays' },
+        event:   { label: 'Event',   plural: 'events' }
+    };
+    Object.keys(RANGE_KINDS).forEach(kind => {
+        const k = RANGE_KINDS[kind];
+        const grid = document.getElementById('sdc-' + kind + '-photo-grid');
+        const hidden = document.getElementById('sdc_' + kind + '_photos');
+        const btn = document.getElementById('sdc-' + kind + '-upload-btn');
+        let frame = null;
+        const openFrame = () => {
+            if (typeof wp === 'undefined' || !wp.media) return;
+            if (!frame) {
+                frame = wp.media({
+                    title: 'Add photos to this ' + k.label.toLowerCase(),
+                    button: { text: 'Add to album' },
+                    library: { type: 'image' },
+                    multiple: 'add'
+                });
+                frame.on('select', function () {
+                    if (k.editor) k.editor.addAttachments(frame.state().get('selection').toJSON());
+                    frame.state().get('selection').reset();
+                });
+            }
+            frame.open();
+        };
+        k.editor = (grid && hidden && window.sdcAlbum)
+            ? window.sdcAlbum.createEditor(grid, hidden, null, {
+                emptyTitle: 'Start an album for this ' + k.label.toLowerCase(),
+                emptyText: 'Add one photo or a whole set.',
+                removeTitle: 'Remove from this ' + k.label.toLowerCase(),
+                onAdd: openFrame
+            })
+            : null;
+        if (k.editor) k.editor.set([]);
+        if (btn) btn.addEventListener('click', e => { e.preventDefault(); openFrame(); });
+
+        const cancel = document.getElementById('sdc-' + kind + '-cancel-edit');
+        if (cancel) cancel.addEventListener('click', () => resetRangeForm(kind, document.getElementById('sdc_date_field').value));
+    });
+
+    // Back to "Add New …" with the given date in both date fields.
+    function resetRangeForm(kind, dateStr) {
+        const k = RANGE_KINDS[kind];
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        set('sdc_' + kind + '_id', '');
+        set('sdc_' + kind + '_title', '');
+        set('sdc_' + kind + '_start', dateStr || '');
+        set('sdc_' + kind + '_end', dateStr || '');
+        if (k.editor) k.editor.set([]);
+        const title = document.getElementById('sdc-' + kind + '-form-title');
+        if (title) title.textContent = 'Add New ' + k.label;
+        const submit = document.getElementById('sdc-' + kind + '-submit');
+        if (submit) submit.textContent = 'Add ' + k.label;
+        const cancel = document.getElementById('sdc-' + kind + '-cancel-edit');
+        if (cancel) cancel.style.display = 'none';
+    }
+
+    // Fills the form with an existing holiday/event so its photos, name and dates can change.
+    function startRangeEdit(kind, item) {
+        const k = RANGE_KINDS[kind];
+        document.getElementById('sdc_' + kind + '_id').value = item.id;
+        document.getElementById('sdc_' + kind + '_title').value = item.title || '';
+        document.getElementById('sdc_' + kind + '_start').value = item.start_date;
+        document.getElementById('sdc_' + kind + '_end').value = item.end_date;
+        if (k.editor) k.editor.set(item.photos_list || []);
+        document.getElementById('sdc-' + kind + '-form-title').textContent = 'Edit ' + k.label + ': ' + (item.title || '');
+        document.getElementById('sdc-' + kind + '-submit').textContent = 'Save ' + k.label;
+        document.getElementById('sdc-' + kind + '-cancel-edit').style.display = '';
+        const wrap = document.getElementById('sdc-add-' + kind + '-wrapper');
+        if (wrap && wrap.scrollIntoView) wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // A holiday/event album, or – with no photos – a simple card with the name and dates.
+    function rangeAlbum(kind, item) {
+        const photos = item.photos_list || [];
+        const box = document.createElement('div');
+        if (photos.length && window.sdcAlbum) {
+            box.className = 'sdc-range-album sdc-range-album--' + kind;
+            // Rendered once on screen, so the collage can measure its width.
+            requestAnimationFrame(() => window.sdcAlbum.renderCollage(box, photos, {
+                date: item.start_date, endDate: item.end_date, title: item.title || '', variant: kind
+            }));
+            return box;
+        }
+        box.className = 'sdc-' + kind + '-card';
+        const h = document.createElement('h3');
+        h.textContent = item.title || '';
+        const d = document.createElement('div');
+        d.className = 'sdc-' + kind + '-dates';
+        d.textContent = '📅 ' + item.start_date + ' to ' + item.end_date;
+        box.appendChild(h);
+        box.appendChild(d);
+        return box;
+    }
+
+    // Compact row in the Holidays/Events tab: name, dates, a strip of thumbnails, Edit/Delete.
+    function rangeListItem(kind, item, dateStr) {
+        const k = RANGE_KINDS[kind];
+        const li = document.createElement('li');
+        const card = document.createElement('div');
+        card.className = 'sdc-range-item sdc-range-item--' + kind;
+
+        const head = document.createElement('div');
+        head.className = 'sdc-range-item-head';
+        const name = document.createElement('strong');
+        name.textContent = item.title || '';
+        const dates = document.createElement('span');
+        dates.className = 'sdc-range-item-dates';
+        dates.textContent = item.start_date + ' to ' + item.end_date;
+        const actions = document.createElement('span');
+        actions.className = 'sdc-range-item-actions';
+        const edit = document.createElement('a');
+        edit.href = '#'; edit.textContent = 'Edit'; edit.className = 'sdc-range-edit';
+        edit.addEventListener('click', e => { e.preventDefault(); startRangeEdit(kind, item); });
+        const del = document.createElement('a');
+        del.href = '#'; del.textContent = 'Delete'; del.className = 'sdc-range-del';
+        del.addEventListener('click', e => {
             e.preventDefault();
-            if (holidayUploader) { holidayUploader.open(); return; }
-            holidayUploader = wp.media.frames.file_frame = wp.media({ title: 'Select Holiday Image', button: { text: 'Use Image' }, multiple: false });
-            holidayUploader.on('select', function() { document.getElementById('sdc_holiday_image').value = holidayUploader.state().get('selection').first().toJSON().url; });
-            holidayUploader.open();
+            if (!confirm('Delete ' + k.label.toLowerCase() + ' "' + (item.title || '') + '"?')) return;
+            jQuery.ajax({
+                url: sdcVars.ajax_url, type: 'POST',
+                data: { action: 'sdc_delete_' + kind, security: sdcVars.nonce, id: item.id },
+                success: function (res) {
+                    if (res && res.success && res.data && Array.isArray(res.data.events)) replaceCalendarEvents(res.data.events);
+                    if (String(document.getElementById('sdc_' + kind + '_id').value) === String(item.id)) resetRangeForm(kind, dateStr);
+                    refreshRanges(dateStr);
+                }
+            });
+        });
+        actions.appendChild(edit);
+        actions.appendChild(del);
+        head.appendChild(name);
+        head.appendChild(dates);
+        head.appendChild(actions);
+        card.appendChild(head);
+
+        const photos = item.photos_list || [];
+        if (photos.length) {
+            const strip = document.createElement('div');
+            strip.className = 'sdc-range-thumbs';
+            const MAX = 8;
+            photos.slice(0, MAX).forEach((p, i) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'sdc-range-thumb';
+                b.setAttribute('aria-label', 'Open photo ' + (i + 1));
+                const im = document.createElement('img');
+                im.alt = ''; im.loading = 'lazy'; im.src = p.thumb || p.large || p.url;
+                b.appendChild(im);
+                if (i === MAX - 1 && photos.length > MAX) {
+                    const more = document.createElement('span');
+                    more.className = 'sdc-range-thumb-more';
+                    more.textContent = '+' + (photos.length - MAX);
+                    b.appendChild(more);
+                }
+                b.addEventListener('click', () => window.sdcAlbum && window.sdcAlbum.openViewer(photos, i, {
+                    date: item.start_date, endDate: item.end_date, variant: kind
+                }));
+                strip.appendChild(b);
+            });
+            card.appendChild(strip);
+        }
+        li.appendChild(card);
+        return li;
+    }
+
+    // Day view albums + the Holidays/Events tabs. mode: 'standard' | 'holiday_view_only' | 'event_view_only'.
+    let rangeMode = 'standard';
+    function renderRanges(data, dateStr, mode) {
+        rangeMode = mode;
+        const parts = {
+            holiday: { display: holidayDisplay, list: holidayList, items: data.holidays || [], viewOnly: 'holiday_view_only' },
+            event:   { display: eventDisplay,   list: eventList,   items: data.events || [],   viewOnly: 'event_view_only' }
+        };
+        Object.keys(parts).forEach(kind => {
+            const part = parts[kind];
+            if (part.display) {
+                part.display.innerHTML = '';
+                part.items.forEach(item => part.display.appendChild(rangeAlbum(kind, item)));
+            }
+            if (part.list) {
+                part.list.innerHTML = '';
+                if (!part.items.length) {
+                    const li = document.createElement('li');
+                    li.textContent = 'No ' + RANGE_KINDS[kind].plural + ' set for this period.';
+                    part.list.appendChild(li);
+                } else if (mode === part.viewOnly) {
+                    // Opened from the stripe in the month view: show the albums themselves.
+                    part.items.forEach(item => {
+                        const li = document.createElement('li');
+                        li.appendChild(rangeAlbum(kind, item));
+                        part.list.appendChild(li);
+                    });
+                } else {
+                    part.items.forEach(item => part.list.appendChild(rangeListItem(kind, item, dateStr)));
+                }
+            }
         });
     }
+
+    // Reloads only the holidays/events of the open day – the rest of the window (and
+    // anything being written there) stays as it is.
+    function refreshRanges(dateStr) {
+        jQuery.ajax({
+            url: sdcVars.ajax_url, type: 'POST',
+            data: { action: 'sdc_get_content', security: sdcVars.nonce, date: dateStr },
+            success: function (res) {
+                if (res && res.success && document.getElementById('sdc_date_field').value === dateStr) renderRanges(res.data, dateStr, rangeMode);
+            }
+        });
+    }
+
+    function bindRangeForm(kind) {
+        const form = document.getElementById('sdc-' + kind + '-form');
+        if (!form) return;
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const k = RANGE_KINDS[kind];
+            const submit = document.getElementById('sdc-' + kind + '-submit');
+            const dateStr = document.getElementById('sdc_date_field').value;
+            if (submit) submit.disabled = true;
+            jQuery.ajax({
+                url: sdcVars.ajax_url, type: 'POST',
+                data: {
+                    action: 'sdc_add_' + kind, security: sdcVars.nonce,
+                    id: document.getElementById('sdc_' + kind + '_id').value,
+                    title: document.getElementById('sdc_' + kind + '_title').value,
+                    start: document.getElementById('sdc_' + kind + '_start').value,
+                    end: document.getElementById('sdc_' + kind + '_end').value,
+                    photos: JSON.stringify(k.editor ? k.editor.get() : [])
+                },
+                success: function (res) {
+                    if (res && res.success) {
+                        if (res.data && Array.isArray(res.data.events)) replaceCalendarEvents(res.data.events);
+                        resetRangeForm(kind, dateStr);
+                        refreshRanges(dateStr);
+                    } else {
+                        alert((res && res.data) || 'Could not save.');
+                    }
+                },
+                error: function () { alert('Could not save – please try again.'); },
+                complete: function () { if (submit) submit.disabled = false; }
+            });
+        });
+    }
+    bindRangeForm('holiday');
+    bindRangeForm('event');
 
     // --- ROW HELPERS (Books, Films, Series) ---
 
@@ -968,14 +1207,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         }
 
         document.getElementById('sdc_date_field').value = dateStr;
-        document.getElementById('sdc_holiday_start').value = dateStr;
-        document.getElementById('sdc_holiday_end').value = dateStr;
-        document.getElementById('sdc_holiday_title').value = '';
-        document.getElementById('sdc_holiday_image').value = '';
-        document.getElementById('sdc_event_start').value = dateStr;
-        document.getElementById('sdc_event_end').value = dateStr;
-        document.getElementById('sdc_event_title').value = '';
-        document.getElementById('sdc_event_image').value = '';
+        resetRangeForm('holiday', dateStr);
+        resetRangeForm('event', dateStr);
 
         // Reset deletion trackers
         deletedBookIds = [];
@@ -998,31 +1231,8 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
     // editors, habits, photos and the edit mode you are in stay exactly as they are.
     function renderDay(data, dateStr, mode, draft, keepEditing) {
 
-        // A. Render Holidays
-        holidayDisplay.innerHTML = '';
-        if(data.holidays && data.holidays.length > 0) {
-            data.holidays.forEach(h => {
-                const card = document.createElement('div');
-                card.className = 'sdc-holiday-card';
-                let imgHtml = h.image_url ? '<img src=\"'+h.image_url+'\">' : '';
-                card.innerHTML = imgHtml + '<h3>'+h.title+'</h3><div class=\"sdc-holiday-dates\">📅 '+h.start_date+' to '+h.end_date+'</div>';
-                holidayDisplay.appendChild(card);
-            });
-        }
-
-        // A2. Render Events
-        if(eventDisplay) {
-            eventDisplay.innerHTML = '';
-            if(data.events && data.events.length > 0) {
-                data.events.forEach(ev => {
-                    const card = document.createElement('div');
-                    card.className = 'sdc-event-card';
-                    let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\">' : '';
-                    card.innerHTML = imgHtml + '<h3>'+ev.title+'</h3><div class=\"sdc-event-dates\">📅 '+ev.start_date+' to '+ev.end_date+'</div>';
-                    eventDisplay.appendChild(card);
-                });
-            }
-        }
+        // A. Holidays & events: albums in the day view, lists in their tabs (6.11)
+        renderRanges(data, dateStr, mode);
 
         // B. Populate books/films/series rows for edit mode
         const booksContainer = document.getElementById('sdc-books-rows');
@@ -1135,64 +1345,6 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
         }
 
         if (!keepEditing) updateHabitNotes();
-
-        // E. Manage Holidays List
-        holidayList.innerHTML = '';
-        if(data.holidays && data.holidays.length > 0) {
-            data.holidays.forEach(h => {
-                const li = document.createElement('li');
-                let imgHtml = h.image_url ? '<img src=\"'+h.image_url+'\" style=\"max-height:100px; display:block; margin-bottom:5px;\">' : '';
-                let deleteLink = (mode === 'standard') ? ' <a href=\"#\" class=\"sdc-del-holiday\" data-id=\"'+h.id+'\" style=\"color:red; float:right;\">[Delete]</a>' : '';
-                li.innerHTML = '<div class=\"sdc-holiday-card\" style=\"margin-bottom:10px;\">' + imgHtml + '<strong>' + h.title + '</strong>' + deleteLink + '<br><span style=\"font-size:0.9em; color:#666;\">(' + h.start_date + ' to ' + h.end_date + ')</span></div>';
-                holidayList.appendChild(li);
-            });
-            if(mode === 'standard') {
-                document.querySelectorAll('.sdc-del-holiday').forEach(btn => {
-                    btn.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        if(confirm('Delete holiday?')) {
-                            jQuery.ajax({
-                                url: sdcVars.ajax_url, type: 'POST',
-                                data: { action: 'sdc_delete_holiday', security: sdcVars.nonce, id: this.dataset.id },
-                                success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
-                            });
-                        }
-                    });
-                });
-            }
-        } else {
-            holidayList.innerHTML = '<li>No holidays set for this period.</li>';
-        }
-
-        // E2. Manage Events List
-        if(eventList) {
-            eventList.innerHTML = '';
-            if(data.events && data.events.length > 0) {
-                data.events.forEach(ev => {
-                    const li = document.createElement('li');
-                    let imgHtml = ev.image_url ? '<img src=\"'+ev.image_url+'\" style=\"max-height:100px; display:block; margin-bottom:5px;\">' : '';
-                    let deleteLink = (mode === 'standard') ? ' <a href=\"#\" class=\"sdc-del-event\" data-id=\"'+ev.id+'\" style=\"color:red; float:right;\">[Delete]</a>' : '';
-                    li.innerHTML = '<div class=\"sdc-event-card\" style=\"margin-bottom:10px;\">' + imgHtml + '<strong>' + ev.title + '</strong>' + deleteLink + '<br><span style=\"font-size:0.9em; color:#666;\">(' + ev.start_date + ' to ' + ev.end_date + ')</span></div>';
-                    eventList.appendChild(li);
-                });
-                if(mode === 'standard') {
-                    document.querySelectorAll('.sdc-del-event').forEach(btn => {
-                        btn.addEventListener('click', function(e) {
-                            e.preventDefault();
-                            if(confirm('Delete event?')) {
-                                jQuery.ajax({
-                                    url: sdcVars.ajax_url, type: 'POST',
-                                    data: { action: 'sdc_delete_event', security: sdcVars.nonce, id: this.dataset.id },
-                                    success: function() { openModalForDate(dateStr, 'standard'); setTimeout(() => location.reload(), 500); }
-                                });
-                            }
-                        });
-                    });
-                }
-            } else {
-                eventList.innerHTML = '<li>No events set for this period.</li>';
-            }
-        }
 
         // F. Loading the day is not "writing"; a restored draft is.
         if (keepEditing) return;
@@ -1339,57 +1491,6 @@ function sdcStartApp(calendarEl, eventsJson, pendingDraft) {
                 const stillHere = modal.style.display !== 'none' && document.getElementById('sdc_date_field').value === dateStr;
                 if (res && res.success && stillHere) renderDay(res.data, dateStr, 'standard', null, true);
             }
-        });
-    }
-
-    const holidayForm = document.getElementById('sdc-holiday-form');
-    if(holidayForm) {
-        holidayForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const title = document.getElementById('sdc_holiday_title').value;
-            const image = document.getElementById('sdc_holiday_image').value;
-            const start = document.getElementById('sdc_holiday_start').value;
-            const end = document.getElementById('sdc_holiday_end').value;
-
-            jQuery.ajax({
-                url: sdcVars.ajax_url, type: 'POST',
-                data: { action: 'sdc_add_holiday', security: sdcVars.nonce, title: title, image: image, start: start, end: end },
-                success: function(res) {
-                    if(res.success) { location.reload(); }
-                    else { alert(res.data); }
-                }
-            });
-        });
-    }
-
-    const eventForm = document.getElementById('sdc-event-form');
-    if(eventForm) {
-        eventForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const title = document.getElementById('sdc_event_title').value;
-            const image = document.getElementById('sdc_event_image').value;
-            const start = document.getElementById('sdc_event_start').value;
-            const end = document.getElementById('sdc_event_end').value;
-            jQuery.ajax({
-                url: sdcVars.ajax_url, type: 'POST',
-                data: { action: 'sdc_add_event', security: sdcVars.nonce, title: title, image: image, start: start, end: end },
-                success: function(res) {
-                    if(res.success) { location.reload(); }
-                    else { alert(res.data); }
-                }
-            });
-        });
-    }
-
-    var eventUploader;
-    const eventUploadBtn = document.getElementById('sdc-event-upload-btn');
-    if(eventUploadBtn) {
-        eventUploadBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            if (eventUploader) { eventUploader.open(); return; }
-            eventUploader = wp.media.frames.file_frame = wp.media({ title: 'Select Event Image', button: { text: 'Use Image' }, multiple: false });
-            eventUploader.on('select', function() { document.getElementById('sdc_event_image').value = eventUploader.state().get('selection').first().toJSON().url; });
-            eventUploader.open();
         });
     }
 
